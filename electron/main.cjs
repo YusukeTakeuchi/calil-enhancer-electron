@@ -1,0 +1,561 @@
+const { app, BrowserWindow, ipcMain, Menu, session, shell } = require('electron')
+const fs = require('node:fs/promises')
+const path = require('node:path')
+const { createLogger } = require('./logger.cjs')
+
+const CALIL_APP_KEY = 'e4ee980a3908451a0f4dc8af64ff268b'
+const CALIL_PARTITION = 'persist:calil-enhancer-account'
+const DEFAULT_STATE = {
+  version: 1,
+  books: [],
+  systems: [],
+  stars: {},
+  ndc: {},
+  collectionCache: {},
+  options: { booksPerPage: 20 },
+  lastSyncedAt: null,
+}
+
+let mainWindow
+let loginWindow
+let calilSession
+let writeQueue = Promise.resolve()
+let logger
+let lastProgressStage
+
+function logInfo(event, details) {
+  logger?.info(event, details)
+  if (!app.isPackaged) console.info(`[${event}]`, details || '')
+}
+
+function logWarn(event, details) {
+  logger?.warn(event, details)
+  console.warn(`[${event}]`, details || '')
+}
+
+function logError(event, error, details) {
+  logger?.error(event, error, details)
+  console.error(`[${event}]`, error)
+}
+
+function safeEndpoint(rawUrl) {
+  try {
+    const url = new URL(rawUrl)
+    return `${url.origin}${url.pathname}`
+  } catch {
+    return '[invalid-url]'
+  }
+}
+
+process.on('uncaughtExceptionMonitor', (error, origin) => {
+  logError('process.uncaught-exception', error, { origin })
+})
+process.on('unhandledRejection', (reason) => {
+  logError('process.unhandled-rejection', reason)
+})
+
+function dataPath() {
+  return path.join(app.getPath('userData'), 'calil-enhancer-data.json')
+}
+
+async function loadState() {
+  try {
+    const data = JSON.parse(await fs.readFile(dataPath(), 'utf8'))
+    return {
+      ...DEFAULT_STATE,
+      ...data,
+      books: Array.isArray(data.books) ? data.books : [],
+      systems: Array.isArray(data.systems) ? data.systems : [],
+      stars: isRecord(data.stars) ? data.stars : {},
+      ndc: isRecord(data.ndc) ? data.ndc : {},
+      collectionCache: isRecord(data.collectionCache) ? data.collectionCache : {},
+      options: { ...DEFAULT_STATE.options, ...(isRecord(data.options) ? data.options : {}) },
+    }
+  } catch (error) {
+    if (error && error.code !== 'ENOENT') logError('storage.read-failed', error)
+    return structuredClone(DEFAULT_STATE)
+  }
+}
+
+function saveState(nextState) {
+  writeQueue = writeQueue.then(async () => {
+    const target = dataPath()
+    const temporary = `${target}.tmp`
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(temporary, JSON.stringify(nextState, null, 2), 'utf8')
+    await fs.rename(temporary, target)
+  })
+  return writeQueue
+}
+
+async function updateState(updater) {
+  await writeQueue
+  const state = await loadState()
+  const result = await updater(state)
+  await saveState(state)
+  return result === undefined ? state : result
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function assertString(value, name) {
+  if (typeof value !== 'string' || value.length > 2048) throw new TypeError(`${name} が不正です。`)
+  return value
+}
+
+function assertStringArray(value, name, max = 200) {
+  if (!Array.isArray(value) || value.length > max || value.some((item) => typeof item !== 'string')) {
+    throw new TypeError(`${name} が不正です。`)
+  }
+  return value
+}
+
+function emitProgress(stage, current = 0, total = 0) {
+  if (stage !== lastProgressStage) {
+    lastProgressStage = stage
+    logInfo('operation.progress', { stage, current, total })
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('calil:progress', { stage, current, total })
+  }
+}
+
+function emitAvailabilityUpdate(books, complete = false) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('calil:availability-update', {
+      books: isRecord(books) ? books : {},
+      complete,
+    })
+  }
+}
+
+async function loggedSessionFetch(url, init = {}, service = 'external') {
+  const startedAt = Date.now()
+  const request = {
+    service,
+    method: String(init.method || 'GET').toUpperCase(),
+    endpoint: safeEndpoint(url),
+  }
+  logInfo('http.request', request)
+  try {
+    const response = await calilSession.fetch(url, init)
+    logInfo('http.response', {
+      ...request,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+    })
+    return response
+  } catch (error) {
+    logError('http.network-error', error, { ...request, durationMs: Date.now() - startedAt })
+    throw error
+  }
+}
+
+async function calilFetch(url, init = {}, acceptedStatuses = []) {
+  const response = await loggedSessionFetch(url, {
+    credentials: 'include',
+    ...init,
+    headers: {
+      Referer: 'https://calil.jp/list',
+      Origin: 'https://calil.jp',
+      ...(init.headers || {}),
+    },
+  }, 'calil')
+  if (!response.ok && !acceptedStatuses.includes(response.status)) {
+    const pathname = new URL(url).pathname
+    const error = new Error(`カーリルとの通信に失敗しました: ${pathname} (${response.status})`)
+    error.status = response.status
+    throw error
+  }
+  return response
+}
+
+async function getWishlistToken() {
+  const response = await calilFetch(
+    'https://calil.jp/infrastructure/v2/get_yomitai_token',
+    { cache: 'no-store' },
+    [401, 503],
+  )
+  if (response.status === 401) throw new Error('カーリルにログインしてください。')
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('json')) {
+    throw new Error('カーリルにログインしてください。')
+  }
+  const json = await response.json()
+  if (response.status === 503) throw new Error(json.message || 'カーリルは現在メンテナンス中です。')
+  const token = json['Calil-Yomitai-Token']
+  if (typeof token !== 'string' || !token) throw new Error('読みたいリストを取得できませんでした。')
+  return token
+}
+
+async function fetchWishlistJson(url, token, init = {}) {
+  const response = await calilFetch(url, {
+    ...init,
+    headers: {
+      'Calil-Yomitai-Token': token,
+      'Content-Type': 'application/json',
+      ...(init.headers || {}),
+    },
+  })
+  return response.json()
+}
+
+async function syncWishlist() {
+  logInfo('wishlist.sync-started')
+  emitProgress('ログイン状態を確認中')
+  const token = await getWishlistToken()
+
+  emitProgress('登録図書館を取得中')
+  const libraryResponse = await calilFetch('https://calil.jp/infrastructure/v2/get_library', { cache: 'no-store' })
+  const libraryData = await libraryResponse.json()
+  const systems = Array.isArray(libraryData.libs)
+    ? libraryData.libs.map((library) => ({
+        id: String(library.system_id || ''),
+        name: String(library.system_name || ''),
+        libraries: Array.isArray(library.sublibs)
+          ? library.sublibs.filter((item) => item.checked).map((item) => String(item.libkey || ''))
+          : [],
+      })).filter((system) => system.id)
+    : []
+
+  const books = []
+  const seen = new Set()
+  for (let page = 1; page <= 500; page += 1) {
+    emitProgress('読みたいリストを取得中', books.length, 0)
+    const data = await fetchWishlistJson('https://calil.jp/api/list/v2/', token, {
+      method: 'POST',
+      body: JSON.stringify({ name: 'wish', perCount: 20, page }),
+    })
+    const pageBooks = Array.isArray(data.books) ? data.books : []
+    for (const rawBook of pageBooks) {
+      const id = String(rawBook.id || rawBook.isbn || '')
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      books.push({ id, title: String(rawBook.title || '無題'), author: String(rawBook.author || '') })
+    }
+    if (pageBooks.length === 0) break
+  }
+
+  await updateState((state) => {
+    state.books = books
+    state.systems = systems
+    state.lastSyncedAt = new Date().toISOString()
+  })
+
+  const state = await loadState()
+  const missingNdc = books.map((book) => book.id).filter((isbn) => !state.ndc[isbn])
+  if (missingNdc.length) {
+    try {
+      const fetched = await fetchNdc(missingNdc)
+      await updateState((draft) => Object.assign(draft.ndc, fetched))
+    } catch (error) {
+      logError('ndc.fetch-failed', error, { isbnCount: missingNdc.length, nonFatal: true })
+    }
+  }
+  emitProgress('同期完了', books.length, books.length)
+  logInfo('wishlist.sync-completed', { bookCount: books.length, systemCount: systems.length })
+  return loadState()
+}
+
+async function fetchNdc(isbns) {
+  const result = {}
+  for (let offset = 0; offset < isbns.length; offset += 20) {
+    const batch = isbns.slice(offset, offset + 20)
+    emitProgress('NDC 分類を取得中', offset, isbns.length)
+    const url = new URL('https://ndlsearch.ndl.go.jp/api/sru')
+    url.searchParams.set('operation', 'searchRetrieve')
+    url.searchParams.set('query', batch.map((isbn) => `isbn="${isbn.replace(/["\\]/g, '\\$&')}"`).join(' OR '))
+    url.searchParams.set('maximumRecords', '100')
+    url.searchParams.set('recordPacking', 'xml')
+    url.searchParams.set('recordSchema', 'dcndl')
+    url.searchParams.set('onlyBib', 'true')
+    const response = await loggedSessionFetch(url.toString(), {}, 'ndl')
+    if (!response.ok) throw new Error(`NDC の取得に失敗しました (${response.status})`)
+    Object.assign(result, extractNdcFromXml(await response.text()))
+  }
+  emitProgress('NDC 分類を取得中', isbns.length, isbns.length)
+  return result
+}
+
+function extractNdcFromXml(xml) {
+  const result = {}
+  const blocks = xml.match(/<(?:\w+:)?recordData\b[\s\S]*?<\/(?:\w+:)?recordData>/gi) || [xml]
+  for (const block of blocks) {
+    const isbnMatch = block.match(/<(?:\w+:)?identifier\b[^>]*(?:ISBN)[^>]*>\s*([^<]+)</i)
+      || block.match(/<(?:\w+:)?ISBN\b[^>]*>\s*([^<]+)</i)
+    const ndcMatch = block.match(/<(?:\w+:)?subject\b[^>]*(?:NDC\d*)[^>]*>\s*([^<]+)</i)
+      || block.match(/<(?:\w+:)?NDC\d*\b[^>]*>\s*([^<]+)</i)
+    if (!isbnMatch || !ndcMatch) continue
+    const originalIsbn = decodeXml(isbnMatch[1]).replace(/[-\s]/g, '')
+    const isbn = originalIsbn.length === 13 ? isbn13to10(originalIsbn) : originalIsbn
+    if (isbn && !result[isbn]) result[isbn] = decodeXml(ndcMatch[1]).normalize('NFKC').trim()
+  }
+  return result
+}
+
+function decodeXml(value) {
+  return value.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+}
+
+function isbn13to10(isbn13) {
+  if (!/^978\d{10}$/.test(isbn13)) return isbn13
+  const base = isbn13.slice(3, 12)
+  const sum = [...base].reduce((total, digit, index) => total + Number(digit) * (10 - index), 0)
+  const check = (11 - (sum % 11)) % 11
+  return base + (check === 10 ? 'X' : String(check))
+}
+
+function mergeBookRecords(target, source) {
+  if (!isRecord(source)) return
+  for (const [isbn, systems] of Object.entries(source)) {
+    if (!isRecord(systems)) continue
+    target[isbn] ||= {}
+    for (const [systemId, record] of Object.entries(systems)) target[isbn][systemId] = record
+  }
+}
+
+async function checkAvailability(isbns, systemIds) {
+  if (!isbns.length || !systemIds.length) return {}
+  const result = {}
+  let params = new URLSearchParams({
+    appkey: CALIL_APP_KEY,
+    callback: 'no',
+    isbn: isbns.join(','),
+    systemid: systemIds.join(','),
+  })
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    emitProgress('蔵書状況を確認中', attempt, 20)
+    const response = await loggedSessionFetch(`https://api.calil.jp/check?${params}`, {}, 'calil-api')
+    if (!response.ok) throw new Error(`蔵書状況を取得できませんでした (${response.status})`)
+    const data = await response.json()
+    mergeBookRecords(result, data.books)
+    const complete = Number(data.continue) !== 1
+    emitAvailabilityUpdate(data.books, complete)
+    if (complete) break
+    await new Promise((resolve) => setTimeout(resolve, attempt < 3 ? 1000 : attempt < 8 ? 2000 : 4000))
+    params = new URLSearchParams({ appkey: CALIL_APP_KEY, callback: 'no', session: String(data.session) })
+  }
+  await updateState((state) => {
+    for (const [isbn, systems] of Object.entries(result)) {
+      state.collectionCache[isbn] ||= {}
+      for (const [systemId, record] of Object.entries(systems)) {
+        if (record && (record.status === 'OK' || record.status === 'Cache')) {
+          state.collectionCache[isbn][systemId] = record
+        }
+      }
+    }
+  })
+  emitAvailabilityUpdate({}, true)
+  emitProgress('蔵書状況の確認完了')
+  return result
+}
+
+async function moveBooks(isbns, destination) {
+  if (!['read', 'delete'].includes(destination)) throw new TypeError('移動先が不正です。')
+  const token = await getWishlistToken()
+  const endpoint = destination === 'read' ? 'move' : 'delete'
+  const payload = destination === 'read'
+    ? { move: isbns, from: 'wish', to: 'read' }
+    : { delete: isbns, from: 'wish' }
+  const response = await calilFetch(`https://calil.jp/api/list/v2/${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Calil-Yomitai-Token': token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  const result = await response.json()
+  const succeeded = Array.isArray(result.success) ? result.success.map(String) : []
+  const failed = Array.isArray(result.fail) ? result.fail : []
+  if (failed.length || succeeded.length !== isbns.length) {
+    throw new Error('一部の本を更新できませんでした。読みたいリストを再同期してください。')
+  }
+  await updateState((state) => {
+    const removed = new Set(succeeded)
+    state.books = state.books.filter((book) => !removed.has(book.id))
+  })
+  logInfo('wishlist.books-updated', { destination, requestedCount: isbns.length, succeededCount: succeeded.length })
+  return loadState()
+}
+
+function handleIpc(channel, handler, { trace = false } = {}) {
+  ipcMain.handle(channel, async (...args) => {
+    const startedAt = Date.now()
+    if (trace) logInfo('ipc.started', { channel })
+    try {
+      const result = await handler(...args)
+      if (trace) logInfo('ipc.completed', { channel, durationMs: Date.now() - startedAt })
+      return result
+    } catch (error) {
+      logError('ipc.failed', error, { channel, durationMs: Date.now() - startedAt })
+      throw error
+    }
+  })
+}
+
+function registerIpc() {
+  handleIpc('state:load', () => loadState())
+  handleIpc('state:set-star', async (_event, payload) => {
+    const isbn = assertString(payload && payload.isbn, 'ISBN')
+    const rate = Number(payload && payload.rate)
+    if (!Number.isInteger(rate) || rate < 0 || rate > 3) throw new TypeError('スターの値が不正です。')
+    return updateState((state) => {
+      if (rate === 0) delete state.stars[isbn]
+      else state.stars[isbn] = rate
+      return state.stars
+    })
+  })
+  handleIpc('state:save-options', async (_event, options) => {
+    const booksPerPage = Number(options && options.booksPerPage)
+    if (!Number.isInteger(booksPerPage) || booksPerPage < 5 || booksPerPage > 100) {
+      throw new TypeError('1ページの冊数は 5〜100 で指定してください。')
+    }
+    return updateState((state) => { state.options.booksPerPage = booksPerPage })
+  })
+  handleIpc('state:clear-local', () => updateState((state) => {
+    state.books = []
+    state.systems = []
+    state.ndc = {}
+    state.collectionCache = {}
+    state.lastSyncedAt = null
+  }), { trace: true })
+  handleIpc('calil:open-login', () => openLoginWindow(), { trace: true })
+  handleIpc('calil:check-login', async () => {
+    try { await getWishlistToken(); return true } catch { return false }
+  })
+  handleIpc('calil:sync-wishlist', () => syncWishlist(), { trace: true })
+  handleIpc('calil:check-availability', (_event, payload) =>
+    checkAvailability(
+      assertStringArray(payload && payload.isbns, 'ISBN'),
+      assertStringArray(payload && payload.systemIds, '図書館ID', 30),
+    ), { trace: true })
+  handleIpc('calil:move-books', (_event, payload) =>
+    moveBooks(assertStringArray(payload && payload.isbns, 'ISBN'), payload && payload.destination), { trace: true })
+  handleIpc('app:open-external', async (_event, rawUrl) => {
+    const url = new URL(assertString(rawUrl, 'URL'))
+    if (url.protocol !== 'https:' || !['calil.jp', 'ndlsearch.ndl.go.jp'].includes(url.hostname)) {
+      throw new Error('許可されていないリンクです。')
+    }
+    await shell.openExternal(url.toString())
+  })
+  handleIpc('app:open-logs', async () => {
+    await logger.flush()
+    shell.showItemInFolder(logger.filePath)
+    return logger.filePath
+  }, { trace: true })
+  ipcMain.on('log:renderer-error', (_event, payload) => {
+    if (!isRecord(payload)) return
+    const type = typeof payload.type === 'string' ? payload.type.slice(0, 80) : 'error'
+    const message = typeof payload.message === 'string' ? payload.message.slice(0, 4000) : 'Unknown renderer error'
+    const stack = typeof payload.stack === 'string' ? payload.stack.slice(0, 12000) : ''
+    logError('renderer.error', Object.assign(new Error(message), { stack }), { type })
+  })
+}
+
+function openLoginWindow() {
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    loginWindow.focus()
+    return true
+  }
+  loginWindow = new BrowserWindow({
+    width: 1080,
+    height: 800,
+    title: 'カーリルにログイン',
+    parent: mainWindow,
+    webPreferences: {
+      partition: CALIL_PARTITION,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  })
+  loginWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://')) return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        parent: loginWindow,
+        webPreferences: {
+          partition: CALIL_PARTITION,
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+        },
+      },
+    }
+    return { action: 'deny' }
+  })
+  loginWindow.loadURL('https://calil.jp/login?redirect=/list/')
+  loginWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedUrl) => {
+    logError('login-window.load-failed', new Error(errorDescription), {
+      errorCode,
+      endpoint: safeEndpoint(validatedUrl),
+    })
+  })
+  loginWindow.on('closed', () => { loginWindow = null })
+  return true
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 920,
+    minWidth: 980,
+    minHeight: 680,
+    backgroundColor: '#f4f1e9',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  })
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logError('renderer.process-gone', new Error(details.reason), { exitCode: details.exitCode })
+  })
+  mainWindow.on('unresponsive', () => logWarn('renderer.unresponsive'))
+  if (app.isPackaged) mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+  else mainWindow.loadURL('http://localhost:5173')
+}
+
+app.whenReady().then(() => {
+  logger = createLogger({ filePath: path.join(app.getPath('logs'), 'main.log') })
+  logInfo('app.started', {
+    appVersion: app.getVersion(),
+    electronVersion: process.versions.electron,
+    chromeVersion: process.versions.chrome,
+    nodeVersion: process.versions.node,
+    platform: process.platform,
+    arch: process.arch,
+    packaged: app.isPackaged,
+  })
+  calilSession = session.fromPartition(CALIL_PARTITION)
+  registerIpc()
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]))
+  createWindow()
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+})
+
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+
+let quittingAfterLogFlush = false
+app.on('before-quit', (event) => {
+  if (!logger || quittingAfterLogFlush) return
+  event.preventDefault()
+  quittingAfterLogFlush = true
+  logger.info('app.stopped')
+  logger.flush().finally(() => app.quit())
+})
+
+module.exports = { extractNdcFromXml, isbn13to10 }
