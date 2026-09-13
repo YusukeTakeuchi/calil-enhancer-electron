@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { aggregateStatus, isResolvedRecord, mergeCollectionCache, statusStyle } from './lib/availability'
 import { matchesBook } from './lib/search'
+import { paginationPages } from './lib/pagination'
 import { NDC_TOP, ndcLabel } from './data/ndc'
 import type { AppState, AvailabilityRecord, Book, LibrarySystem, MoveDestination, Progress } from './types'
 
@@ -167,9 +168,10 @@ function App() {
 
   const first = filteredBooks.length ? (safePage - 1) * booksPerPage + 1 : 0
   const last = Math.min(safePage * booksPerPage, filteredBooks.length)
+  const hasPagination = filteredBooks.length > booksPerPage
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${hasPagination ? 'has-pagination' : ''}`}>
       <header className="app-header">
         <button className="brand" onClick={() => { setQuery(''); setStarFilter('none') }}>
           <span className="brand-mark" aria-hidden="true">C<span>＋</span></span>
@@ -240,7 +242,7 @@ function App() {
                 ))}
               </div>
 
-              {filteredBooks.length > booksPerPage && <Pagination page={safePage} maxPage={maxPage} disabled={busy} onPage={changePage} />}
+              {hasPagination && <Pagination page={safePage} maxPage={maxPage} disabled={busy} onPage={changePage} />}
             </section>
 
             <Sidebar tab={sideTab} onTab={setSideTab} state={state} onSearchNdc={(code) => setQuery(`ndc:${code}(${ndcLabel(code)})`)} onState={setState} onNotice={setNotice} />
@@ -394,11 +396,12 @@ function Sidebar({ tab, onTab, state, onSearchNdc, onState, onNotice }: {
 }
 
 function Pagination({ page, maxPage, disabled, onPage }: { page: number; maxPage: number; disabled: boolean; onPage: (page: number) => void }) {
-  const pages = Array.from({ length: maxPage }, (_, index) => index + 1).filter((value) => value === 1 || value === maxPage || Math.abs(value - page) <= 2)
+  const pages = paginationPages(page, maxPage)
   return <nav className="pagination" aria-label="ページ">
-    <button disabled={disabled || page === 1} onClick={() => onPage(page - 1)}>← 前へ</button>
+    <button className="page-direction" disabled={disabled || page === 1} onClick={() => onPage(page - 1)}>← 前へ</button>
     {pages.map((value, index) => <span key={value}>{index > 0 && value - pages[index - 1] > 1 && <i>…</i>}<button disabled={disabled || value === page} className={value === page ? 'active' : ''} onClick={() => onPage(value)}>{value}</button></span>)}
-    <button disabled={disabled || page === maxPage} onClick={() => onPage(page + 1)}>次へ →</button>
+    <button className="page-direction" disabled={disabled || page === maxPage} onClick={() => onPage(page + 1)}>次へ →</button>
+    <label className="page-jump"><span>ページ</span><select aria-label="移動先ページ" value={page} disabled={disabled} onChange={(event) => onPage(Number(event.target.value))}>{Array.from({ length: maxPage }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select><small>/ {maxPage}</small></label>
   </nav>
 }
 

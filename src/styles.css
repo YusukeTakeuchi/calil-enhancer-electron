@@ -171,10 +171,15 @@ h1 { font-family: Georgia, "Yu Mincho", serif; font-size: 27px; margin: 4px 0 0;
 .diagnostics p { color: var(--muted); font-size: 10px; line-height: 1.6; margin: 0 0 10px; }
 .danger-zone p { color: var(--muted); font-size: 10px; line-height: 1.6; }.danger-zone button { border: 1px solid #dfbbb6; background: #fff5f3; color: var(--red); border-radius: 7px; padding: 7px 9px; font-size: 10px; cursor: pointer; }
 
-.pagination { margin: 22px 0 0; display: flex; justify-content: center; gap: 5px; align-items: center; }
+.pagination { position: fixed; z-index: 55; left: 50%; bottom: 18px; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px); margin: 0; padding: 7px; display: flex; flex-wrap: nowrap; justify-content: center; gap: 5px; align-items: center; overflow-x: auto; border: 1px solid rgba(202, 202, 194, .9); border-radius: 12px; background: rgba(255, 253, 248, .94); box-shadow: 0 10px 30px rgba(28, 38, 31, .18); backdrop-filter: blur(12px); }
 .pagination > button, .pagination span button { border: 1px solid var(--line); background: var(--paper); min-width: 34px; height: 34px; border-radius: 8px; font-size: 11px; cursor: pointer; }
-.pagination > button { padding-inline: 13px; }.pagination button:disabled { opacity: .4; cursor: default; }.pagination button.active:disabled { opacity: 1; }.pagination span { display: flex; align-items: center; gap: 5px; }.pagination span i { color: var(--muted); font-style: normal; }.pagination span button.active { color: white; background: var(--green); border-color: var(--green); }
+.pagination > button { padding-inline: 13px; }.pagination button:disabled { opacity: .4; cursor: default; }.pagination button.active:disabled { opacity: 1; }.pagination > span { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; }.pagination span i { color: var(--muted); font-style: normal; }.pagination span button.active { color: white; background: var(--green); border-color: var(--green); }
+.pagination .page-direction { flex: 0 0 auto; min-width: 68px; white-space: nowrap; }
+.page-jump { flex: 0 0 auto; height: 34px; margin-left: 3px; padding: 0 8px; display: flex; align-items: center; gap: 5px; border-left: 1px solid var(--line); color: var(--muted); font-size: 10px; white-space: nowrap; }
+.page-jump select { width: 58px; height: 28px; border: 1px solid #cfd0c7; border-radius: 6px; background: white; color: var(--ink); padding: 0 5px; font-weight: 700; }
+.page-jump small { font-size: 10px; }
 .selection-bar { position: fixed; z-index: 60; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; background: #24352c; color: white; padding: 10px 12px 10px 18px; border-radius: 13px; box-shadow: 0 14px 36px rgba(23, 31, 26, .3); }
+.app-shell.has-pagination .selection-bar { bottom: 78px; }
 .selection-bar strong { font-size: 12px; margin-right: 9px; }.selection-bar button { border: 1px solid #5c6c62; background: #34483d; color: white; border-radius: 7px; padding: 7px 10px; font-size: 10px; cursor: pointer; }.selection-bar button.danger { background: #7c3f3b; border-color: #92514c; }.selection-bar .close-selection { border: 0; background: transparent; font-size: 17px; padding: 3px 6px; }
 
 .empty-state { margin: 26px auto 0; max-width: 780px; text-align: center; background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 42px; box-shadow: var(--shadow); }
