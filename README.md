@@ -2,6 +2,11 @@
 
 カーリルの「読みたいリスト」を、蔵書状況と一緒に検索・整理できるデスクトップアプリです。
 
+> [!IMPORTANT]
+> Calil Enhancerはカーリル公式ではない非公式アプリです。カーリルの運営元とは関係ありません。
+
+現在のバージョンは `0.1.0` です。macOS、Windows、Linux向けのインストーラーはGitHub Releasesから配布します。
+
 ## 主な機能
 
 - カーリルへのログインと「読みたいリスト」の同期
@@ -83,6 +88,23 @@ npm run package
 ```bash
 npm run dist
 ```
+
+## CI・リリース・Webサイト
+
+- `.github/workflows/ci.yml`: `main`へのpushとPull Requestでテスト・ビルドを実行
+- `.github/workflows/release.yml`: `v0.1.0`のようなタグからmacOS、Windows、Linux版を作成し、GitHub Releaseへ添付
+- `.github/workflows/pages.yml`: `website/`をGitHub Pagesへ公開
+
+GitHub Pagesを初めて公開するときは、リポジトリの **Settings → Pages → Build and deployment → Source** で **GitHub Actions** を選択してください。以後は`main`上のWebサイト変更が自動公開されます。
+
+リリースするタグは`package.json`のバージョンと一致させます。
+
+```bash
+git tag v0.1.0
+git push origin main v0.1.0
+```
+
+CIで生成するインストーラーはコード署名されていません。一般配布時は、各OS向けの署名証明書をGitHub Actionsへ設定してください。
 
 macOS用ICNSを `build/icon.png` から再生成する場合は、macOS上で次を実行します。
 

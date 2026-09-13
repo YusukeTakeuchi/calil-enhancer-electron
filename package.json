@@ -1,10 +1,13 @@
 {
   "name": "calil-enhancer-electron",
-  "version": "2.0.37",
+  "version": "0.1.0",
   "description": "カーリルの読みたいリストを検索・整理する Electron + React アプリ",
   "author": "Yusuke Takeuchi",
   "main": "electron/main.cjs",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
     "build": "tsc --noEmit && vite build",
@@ -36,6 +39,7 @@
     "directories": {
       "output": "release"
     },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "files": [
       "dist/**/*",
       "electron/**/*",

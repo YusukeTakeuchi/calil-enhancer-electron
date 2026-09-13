@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="カーリルの読みたいリストを、蔵書状況と一緒に検索・整理できるデスクトップアプリ。" />
+    <meta name="theme-color" content="#173f31" />
+    <title>Calil Enhancer</title>
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./site.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="wordmark" href="#top" aria-label="Calil Enhancer トップ">
+        <img src="./icon.svg" alt="" />
+        <span>Calil Enhancer</span>
+      </a>
+      <nav aria-label="メインナビゲーション">
+        <a href="#features">機能</a>
+        <a href="#how-to-use">使い方</a>
+        <a class="github-link" href="#" rel="noreferrer">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span> DESKTOP APPLICATION</p>
+          <h1>Calil Enhancer</h1>
+          <p class="hero-lead">カーリルの「読みたいリスト」を、図書館の蔵書状況と一緒に検索・整理するデスクトップアプリです。</p>
+          <p class="unofficial-notice"><strong>非公式アプリ</strong> Calil Enhancerはカーリル公式ではなく、カーリルの運営元とは関係ありません。</p>
+          <div class="hero-actions">
+            <a class="primary release-link" href="#download">最新版をダウンロード <span>↗</span></a>
+            <a class="secondary github-link" href="#" rel="noreferrer">ソースを見る</a>
+          </div>
+          <p class="release-note"><b>v0.1.0</b><span>macOS / Windows / Linux</span></p>
+        </div>
+
+        <div class="app-preview" aria-label="Calil Enhancerの画面イメージ">
+          <div class="window-bar"><i></i><i></i><i></i><span>Calil Enhancer</span></div>
+          <div class="preview-toolbar">
+            <div class="fake-search">⌕ <span>タイトル・著者・NDCで検索</span></div>
+            <button>蔵書を確認</button>
+          </div>
+          <div class="preview-body">
+            <div class="preview-list">
+              <article>
+                <div class="book-cover cover-one">BOOK</div>
+                <div class="book-copy"><h3>吾輩は猫である</h3><p>夏目 漱石</p><small>NDC 913.6</small><b>★★★</b></div>
+                <div class="availability available"><strong>◎</strong><span>貸出可<small>中央図書館</small></span></div>
+              </article>
+              <article>
+                <div class="book-cover cover-two">BOOK</div>
+                <div class="book-copy"><h3>銀河鉄道の夜</h3><p>宮沢 賢治</p><small>NDC 913.6</small><b>★★</b></div>
+                <div class="availability waiting"><strong>△</strong><span>貸出中<small>市立図書館</small></span></div>
+              </article>
+              <article>
+                <div class="book-cover cover-three">BOOK</div>
+                <div class="book-copy"><h3>次に読む一冊</h3><p>読みたいリストから</p><small>NDC 007</small><b>☆</b></div>
+                <div class="availability owned"><strong>○</strong><span>蔵書あり<small>県立図書館</small></span></div>
+              </article>
+            </div>
+            <aside class="preview-sidebar">
+              <div><b>NDC 分類</b><span>データ・設定</span></div>
+              <ol>
+                <li><strong>0</strong><span>総記</span><em>12</em></li>
+                <li><strong>3</strong><span>社会科学</span><em>41</em></li>
+                <li><strong>4</strong><span>自然科学</span><em>28</em></li>
+                <li><strong>7</strong><span>芸術・美術</span><em>35</em></li>
+                <li class="active"><strong>9</strong><span>文学</span><em>126</em></li>
+              </ol>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="trust-strip" aria-label="特徴の概要">
+        <span>LOCAL FIRST</span><p>読書データは端末内に保存</p>
+        <span>FAST FILTER</span><p>NDC・評価・蔵書で絞り込み</p>
+        <span>3 PLATFORMS</span><p>macOS・Windows・Linux</p>
+      </section>
+
+      <section id="features" class="features section-wrap">
+        <div class="section-heading"><p>FEATURES</p><h2>主な機能</h2></div>
+        <div class="feature-grid">
+          <article class="feature-card feature-large">
+            <span class="feature-number">01</span>
+            <div class="feature-icon search-icon">⌕</div>
+            <h3>読みたい本を横断検索</h3>
+            <p>タイトル・著者名・NDC分類・3段階評価を組み合わせ、増え続けるリストから目的の本をすぐに見つけられます。</p>
+            <div class="query-sample"><span>猫</span><span>ndc:913</span><span>star:2-3</span></div>
+          </article>
+          <article class="feature-card">
+            <span class="feature-number">02</span>
+            <div class="feature-icon">◎</div>
+            <h3>蔵書状況を一覧で確認</h3>
+            <p>登録した複数の図書館をまとめて確認。結果は取得できた本から順に反映されます。</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-number">03</span>
+            <div class="feature-icon">分</div>
+            <h3>NDC分類から絞り込む</h3>
+            <p>大分類と細分類をアコーディオンでたどり、読みたい分野へ直感的に移動できます。</p>
+          </article>
+          <article class="feature-card feature-wide">
+            <span class="feature-number">04</span>
+            <div><h3>キャッシュで軽快に、取得元も明確に。</h3><p>前回の蔵書結果を起動直後から表示し、今回取得した新しい結果とは色で区別。図書館ごとの蔵書有フィルターにも利用できます。</p></div>
+            <div class="cache-demo"><span><i class="fresh"></i>今回取得</span><span><i class="cached"></i>ローカルキャッシュ</span></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="how-to-use" class="steps section-wrap">
+        <div class="section-heading"><p>HOW TO USE</p><h2>基本的な使い方</h2></div>
+        <ol>
+          <li><b>1</b><div><h3>カーリルにログイン</h3><p>アプリ内の専用ウィンドウから、いつものアカウントへログインします。</p></div></li>
+          <li><b>2</b><div><h3>読みたいリストを同期</h3><p>登録した本・図書館・NDC分類を取得し、ローカルへ保存します。</p></div></li>
+          <li><b>3</b><div><h3>蔵書を確認して選ぶ</h3><p>いま表示している本の在庫を調べ、そのまま図書館の予約ページへ移動できます。</p></div></li>
+        </ol>
+      </section>
+
+      <section id="download" class="download section-wrap">
+        <img src="./icon.svg" alt="" />
+        <div><p>VERSION 0.1.0</p><h2>ダウンロード</h2><span>macOS・Windows・Linux</span></div>
+        <a class="primary release-link" href="#">GitHub Releasesへ <span>↗</span></a>
+      </section>
+    </main>
+
+    <footer>
+      <a class="wordmark" href="#top"><img src="./icon.svg" alt="" /><span>Calil Enhancer</span></a>
+      <p>Calil Enhancerはカーリル公式ではない非公式アプリです。カーリルの運営元とは関係ありません。</p>
+      <a class="github-link" href="#" rel="noreferrer">GitHub</a>
+    </footer>
+  </body>
+</html>
