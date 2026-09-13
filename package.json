@@ -1,6 +1,6 @@
 {
   "name": "calil-enhancer-electron",
-  "version": "2.0.21",
+  "version": "2.0.22",
   "description": "カーリルの読みたいリストを検索・整理する Electron + React アプリ",
   "author": "Yusuke Takeuchi",
   "main": "electron/main.cjs",

@@ -157,17 +157,24 @@ h1 { font-family: Georgia, "Yu Mincho", serif; font-size: 27px; margin: 4px 0 0;
 .sidebar-tabs button { border: 0; background: transparent; padding: 9px 5px; color: var(--muted); border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; }
 .sidebar-tabs button.active { color: var(--green); background: var(--paper); box-shadow: 0 2px 6px rgba(39, 45, 40, .08); }
 .ndc-panel, .data-panel { overflow: auto; padding: 16px; }
-.ndc-panel > p { font-size: 11px; color: var(--muted); margin: 0 0 11px; }
-.ndc-top-list { display: flex; flex-direction: column; gap: 2px; }
-.ndc-top-list button { border: 0; background: transparent; border-radius: 8px; min-height: 35px; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; text-align: left; cursor: pointer; padding: 4px 8px; }
-.ndc-top-list button:hover { background: #eef2ea; color: var(--green); }
-.ndc-top-list b { font: 600 18px Georgia, serif; color: var(--green); }
-.ndc-top-list span { font-size: 11px; }
-.ndc-top-list em, .ndc-detail em { font-style: normal; min-width: 24px; text-align: center; padding: 2px 5px; border-radius: 99px; color: #737972; background: #eeeee8; font-size: 9px; }
-.ndc-detail { margin-top: 17px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; }
-.ndc-detail h3, .data-panel h3 { font-size: 11px; margin: 0 0 9px; text-transform: uppercase; letter-spacing: .08em; color: #686e68; }
-.ndc-detail button { display: grid; grid-template-columns: 38px 1fr auto; gap: 5px; border: 0; background: transparent; padding: 6px; text-align: left; cursor: pointer; border-radius: 6px; }
-.ndc-detail button:hover { background: #f0f2ec; }.ndc-detail button > span { font: 600 12px Georgia, serif; }.ndc-detail small { font-size: 9px; color: var(--muted); }
+.ndc-accordion { display: flex; flex-direction: column; gap: 3px; }
+.ndc-accordion > section { border: 1px solid transparent; border-radius: 9px; overflow: hidden; }
+.ndc-accordion > section.expanded { border-color: #d8ddd4; background: #fafbf7; }
+.ndc-accordion-header { display: grid; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; }
+.ndc-parent-filter { border: 0; background: transparent; min-height: 37px; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; text-align: left; cursor: pointer; padding: 4px 6px 4px 8px; }
+.ndc-parent-filter:hover { background: #eef2ea; color: var(--green); }
+.ndc-parent-filter b { font: 600 18px Georgia, serif; color: var(--green); }
+.ndc-parent-filter span { font-size: 11px; }
+.ndc-parent-filter em, .ndc-accordion-details em { font-style: normal; min-width: 24px; text-align: center; padding: 2px 5px; border-radius: 99px; color: #737972; background: #eeeee8; font-size: 9px; }
+.ndc-accordion-toggle { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--green); cursor: pointer; }
+.ndc-accordion-toggle:hover:not(:disabled) { background: #e5ece3; }
+.ndc-accordion-toggle:disabled { color: #c4c7c1; cursor: default; }
+.ndc-accordion-toggle span { display: block; font-size: 17px; line-height: 1; transition: transform .16s ease; }
+.ndc-accordion-toggle[aria-expanded="true"] span { transform: rotate(180deg); }
+.ndc-accordion-details { padding: 3px 5px 6px 32px; border-top: 1px solid #e6e8e2; display: flex; flex-direction: column; }
+.ndc-accordion-details button { display: grid; grid-template-columns: 38px 1fr auto; gap: 5px; border: 0; background: transparent; padding: 6px; text-align: left; cursor: pointer; border-radius: 6px; }
+.ndc-accordion-details button:hover { background: #eef2ea; }.ndc-accordion-details button > span { font: 600 12px Georgia, serif; }.ndc-accordion-details small { font-size: 9px; color: var(--muted); }
+.data-panel h3 { font-size: 11px; margin: 0 0 9px; text-transform: uppercase; letter-spacing: .08em; color: #686e68; }
 .data-panel section { padding-bottom: 19px; margin-bottom: 19px; border-bottom: 1px solid var(--line); }
 .data-panel section:last-child { border: 0; margin-bottom: 0; }
 .data-panel dl { margin: 0; }.data-panel dl > div { display: flex; justify-content: space-between; gap: 10px; margin: 8px 0; font-size: 11px; }.data-panel dt { color: var(--muted); }.data-panel dd { margin: 0; text-align: right; font-weight: 650; }

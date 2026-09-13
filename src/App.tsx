@@ -342,6 +342,7 @@ function Sidebar({ tab, onTab, state, onSearchNdc, onState, onNotice }: {
   onNotice: (notice: Notice) => void
 }) {
   const [perPage, setPerPage] = useState(state.options.booksPerPage)
+  const [expandedNdc, setExpandedNdc] = useState<string | null>(null)
   const counts = useMemo(() => {
     const result: Record<string, number> = {}
     state.books.forEach((book) => {
@@ -382,11 +383,21 @@ function Sidebar({ tab, onTab, state, onSearchNdc, onState, onNotice }: {
   return <aside className="sidebar">
     <div className="sidebar-tabs"><button className={tab === 'ndc' ? 'active' : ''} onClick={() => onTab('ndc')}>NDC 分類</button><button className={tab === 'data' ? 'active' : ''} onClick={() => onTab('data')}>データ・設定</button></div>
     {tab === 'ndc' ? <div className="ndc-panel">
-      <p>分類から本を絞り込む</p>
-      <div className="ndc-top-list">
-        {Object.entries(NDC_TOP).map(([code, label]) => <button key={code} onClick={() => onSearchNdc(code)}><b>{code}</b><span>{label}</span><em>{counts[code] ?? 0}</em></button>)}
+      <div className="ndc-accordion">
+        {Object.entries(NDC_TOP).map(([code, label]) => {
+          const detailCodes = presentCodes.filter((detailCode) => detailCode.startsWith(code))
+          const expanded = expandedNdc === code
+          return <section key={code} className={expanded ? 'expanded' : ''}>
+            <div className="ndc-accordion-header">
+              <button className="ndc-parent-filter" onClick={() => onSearchNdc(code)} title={`${code} ${label}で絞り込む`}><b>{code}</b><span>{label}</span><em>{counts[code] ?? 0}</em></button>
+              <button className="ndc-accordion-toggle" disabled={detailCodes.length === 0} aria-expanded={expanded} aria-controls={`ndc-details-${code}`} aria-label={`${code} ${label}の細分類を${expanded ? '閉じる' : '開く'}`} onClick={() => setExpandedNdc(expanded ? null : code)}><span>⌄</span></button>
+            </div>
+            {expanded && <div id={`ndc-details-${code}`} className="ndc-accordion-details">
+              {detailCodes.map((detailCode) => <button key={detailCode} onClick={() => onSearchNdc(detailCode)}><span>{detailCode}</span><small>{ndcLabel(detailCode)}</small><em>{counts[detailCode]}</em></button>)}
+            </div>}
+          </section>
+        })}
       </div>
-      {presentCodes.length > 0 && <div className="ndc-detail"><h3>リスト内の細分類</h3>{presentCodes.map((code) => <button key={code} onClick={() => onSearchNdc(code)}><span>{code}</span><small>{ndcLabel(code)}</small><em>{counts[code]}</em></button>)}</div>}
     </div> : <div className="data-panel">
       <section><h3>同期情報</h3><dl><div><dt>読みたい本</dt><dd>{state.books.length} 冊</dd></div><div><dt>登録図書館</dt><dd>{state.systems.length} 件</dd></div><div><dt>最終同期</dt><dd>{state.lastSyncedAt ? new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(state.lastSyncedAt)) : '未同期'}</dd></div></dl></section>
       <section><h3>表示設定</h3><label className="per-page"><span>1ページの冊数</span><input type="number" min="5" max="100" value={perPage} onChange={(event) => setPerPage(event.target.valueAsNumber)} /></label><button className="button small" onClick={savePerPage}>設定を保存</button></section>
