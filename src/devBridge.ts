@@ -45,10 +45,12 @@ export function installDevBridge() {
     checkAvailability: async () => structuredClone(state.collectionCache) as CollectionCache,
     moveBooks: async (isbns) => { state.books = state.books.filter((book) => !isbns.includes(book.id)); return structuredClone(state) },
     openExternal: async () => undefined,
+    openReservePage: async () => undefined,
     openLogs: async () => '/tmp/calil-enhancer-preview.log',
     logRendererError: () => undefined,
     onProgress: () => () => undefined,
     onAvailabilityUpdate: () => () => undefined,
+    onNdcUpdate: () => () => undefined,
   }
   window.calil = bridge
 }

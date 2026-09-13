@@ -10,6 +10,14 @@ describe('search query', () => {
     expect(matchesBook(book, '猫 ndc:4', context)).toBe(false)
   })
 
+  it('treats a spaced NDC label as a display-only annotation', () => {
+    const statisticsBook = { id: '417-book', title: '統計入門', author: '著者' }
+    const statisticsContext = { stars: {}, ndc: { '417-book': '417' }, starFilter: 'none' as const }
+
+    expect(parseQuery('ndc:417(確率論 数理統計学)')).toMatchObject({ text: [], ndcs: ['417'] })
+    expect(matchesBook(statisticsBook, 'ndc:417(確率論 数理統計学)', statisticsContext)).toBe(true)
+  })
+
   it('supports exact and ranged star queries', () => {
     expect(parseQuery('star:2')).toMatchObject({ starRange: { from: 2, to: 2 } })
     expect(matchesBook(book, 'star:1-2', context)).toBe(true)

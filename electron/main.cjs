@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, Menu, session, shell } = require('electron'
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createLogger } = require('./logger.cjs')
+const { createNdlSruUrl, extractNdcFromXml, extractSruDiagnostic, isValidNdc } = require('./ndl.cjs')
+const { getAuthorizedReserveUrl, parseExternalHttpsUrl } = require('./external-url.cjs')
 
 const CALIL_APP_KEY = 'e4ee980a3908451a0f4dc8af64ff268b'
 const CALIL_PARTITION = 'persist:calil-enhancer-account'
@@ -131,6 +133,15 @@ function emitAvailabilityUpdate(books, complete = false) {
   }
 }
 
+function emitNdcUpdate(ndc, complete = false) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('calil:ndc-update', {
+      ndc: isRecord(ndc) ? ndc : {},
+      complete,
+    })
+  }
+}
+
 async function loggedSessionFetch(url, init = {}, service = 'external') {
   const startedAt = Date.now()
   const request = {
@@ -245,11 +256,10 @@ async function syncWishlist() {
   })
 
   const state = await loadState()
-  const missingNdc = books.map((book) => book.id).filter((isbn) => !state.ndc[isbn])
+  const missingNdc = books.map((book) => book.id).filter((isbn) => !isValidNdc(state.ndc[isbn]))
   if (missingNdc.length) {
     try {
-      const fetched = await fetchNdc(missingNdc)
-      await updateState((draft) => Object.assign(draft.ndc, fetched))
+      await fetchNdc(missingNdc)
     } catch (error) {
       logError('ndc.fetch-failed', error, { isbnCount: missingNdc.length, nonFatal: true })
     }
@@ -261,51 +271,61 @@ async function syncWishlist() {
 
 async function fetchNdc(isbns) {
   const result = {}
-  for (let offset = 0; offset < isbns.length; offset += 20) {
-    const batch = isbns.slice(offset, offset + 20)
-    emitProgress('NDC 分類を取得中', offset, isbns.length)
-    const url = new URL('https://ndlsearch.ndl.go.jp/api/sru')
-    url.searchParams.set('operation', 'searchRetrieve')
-    url.searchParams.set('query', batch.map((isbn) => `isbn="${isbn.replace(/["\\]/g, '\\$&')}"`).join(' OR '))
-    url.searchParams.set('maximumRecords', '100')
-    url.searchParams.set('recordPacking', 'xml')
-    url.searchParams.set('recordSchema', 'dcndl')
-    url.searchParams.set('onlyBib', 'true')
-    const response = await loggedSessionFetch(url.toString(), {}, 'ndl')
-    if (!response.ok) throw new Error(`NDC の取得に失敗しました (${response.status})`)
-    Object.assign(result, extractNdcFromXml(await response.text()))
+  let pending = {}
+  let failedRequests = 0
+  let batchRequested = 0
+  let batchFetched = 0
+  for (let index = 0; index < isbns.length; index += 1) {
+    emitProgress('NDC 分類を取得中', index, isbns.length)
+    const url = createNdlSruUrl(isbns[index])
+    batchRequested += 1
+    try {
+      let response
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        response = await loggedSessionFetch(url, { cache: 'no-store' }, 'ndl')
+        if (response.ok) break
+        if (attempt === 3) throw new Error(`NDC の取得に失敗しました (${response.status})`)
+        await new Promise((resolve) => setTimeout(resolve, attempt * 750))
+      }
+      const xml = await response.text()
+      const diagnostic = extractSruDiagnostic(xml)
+      if (diagnostic) throw new Error(`NDC API 診断: ${diagnostic}`)
+      const fetched = extractNdcFromXml(xml)
+      Object.assign(result, fetched)
+      Object.assign(pending, fetched)
+      batchFetched += Object.keys(fetched).length
+    } catch (error) {
+      failedRequests += 1
+      logError('ndc.request-failed', error, { index, nonFatal: true })
+    }
+
+    const processed = index + 1
+    if (processed % 20 === 0 || processed === isbns.length) {
+      const committed = pending
+      pending = {}
+      if (Object.keys(committed).length) {
+        // Save and render incrementally so an interruption cannot discard earlier results.
+        await updateState((state) => Object.assign(state.ndc, committed))
+        emitNdcUpdate(committed)
+      }
+      logInfo('ndc.batch-completed', {
+        processed,
+        requestedCount: batchRequested,
+        fetchedCount: batchFetched,
+      })
+      batchRequested = 0
+      batchFetched = 0
+    }
+    emitProgress('NDC 分類を取得中', processed, isbns.length)
+    if (processed < isbns.length) await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  emitProgress('NDC 分類を取得中', isbns.length, isbns.length)
+  emitNdcUpdate({}, true)
+  logInfo('ndc.fetch-completed', {
+    requestedCount: isbns.length,
+    fetchedCount: Object.keys(result).length,
+    failedRequests,
+  })
   return result
-}
-
-function extractNdcFromXml(xml) {
-  const result = {}
-  const blocks = xml.match(/<(?:\w+:)?recordData\b[\s\S]*?<\/(?:\w+:)?recordData>/gi) || [xml]
-  for (const block of blocks) {
-    const isbnMatch = block.match(/<(?:\w+:)?identifier\b[^>]*(?:ISBN)[^>]*>\s*([^<]+)</i)
-      || block.match(/<(?:\w+:)?ISBN\b[^>]*>\s*([^<]+)</i)
-    const ndcMatch = block.match(/<(?:\w+:)?subject\b[^>]*(?:NDC\d*)[^>]*>\s*([^<]+)</i)
-      || block.match(/<(?:\w+:)?NDC\d*\b[^>]*>\s*([^<]+)</i)
-    if (!isbnMatch || !ndcMatch) continue
-    const originalIsbn = decodeXml(isbnMatch[1]).replace(/[-\s]/g, '')
-    const isbn = originalIsbn.length === 13 ? isbn13to10(originalIsbn) : originalIsbn
-    if (isbn && !result[isbn]) result[isbn] = decodeXml(ndcMatch[1]).normalize('NFKC').trim()
-  }
-  return result
-}
-
-function decodeXml(value) {
-  return value.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>').replace(/&amp;/g, '&')
-}
-
-function isbn13to10(isbn13) {
-  if (!/^978\d{10}$/.test(isbn13)) return isbn13
-  const base = isbn13.slice(3, 12)
-  const sum = [...base].reduce((total, digit, index) => total + Number(digit) * (10 - index), 0)
-  const check = (11 - (sum % 11)) % 11
-  return base + (check === 10 ? 'X' : String(check))
 }
 
 function mergeBookRecords(target, source) {
@@ -436,11 +456,19 @@ function registerIpc() {
   handleIpc('calil:move-books', (_event, payload) =>
     moveBooks(assertStringArray(payload && payload.isbns, 'ISBN'), payload && payload.destination), { trace: true })
   handleIpc('app:open-external', async (_event, rawUrl) => {
-    const url = new URL(assertString(rawUrl, 'URL'))
-    if (url.protocol !== 'https:' || !['calil.jp', 'ndlsearch.ndl.go.jp'].includes(url.hostname)) {
-      throw new Error('許可されていないリンクです。')
-    }
+    const url = parseExternalHttpsUrl(
+      assertString(rawUrl, 'URL'),
+      ['calil.jp', 'ndlsearch.ndl.go.jp'],
+    )
     await shell.openExternal(url.toString())
+    logInfo('app.external-opened', { hostname: url.hostname })
+  })
+  handleIpc('app:open-reserve', async (_event, payload) => {
+    const isbn = assertString(payload && payload.isbn, 'ISBN')
+    const systemId = assertString(payload && payload.systemId, '図書館ID')
+    const url = getAuthorizedReserveUrl(await loadState(), isbn, systemId)
+    await shell.openExternal(url.toString())
+    logInfo('app.reserve-opened', { hostname: url.hostname, systemId })
   })
   handleIpc('app:open-logs', async () => {
     await logger.flush()
@@ -557,5 +585,3 @@ app.on('before-quit', (event) => {
   logger.info('app.stopped')
   logger.flush().finally(() => app.quit())
 })
-
-module.exports = { extractNdcFromXml, isbn13to10 }

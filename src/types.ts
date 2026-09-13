@@ -40,6 +40,11 @@ export type AvailabilityUpdate = {
   complete: boolean
 }
 
+export type NdcUpdate = {
+  ndc: Record<string, string>
+  complete: boolean
+}
+
 export type MoveDestination = 'read' | 'delete'
 
 export interface CalilBridge {
@@ -53,10 +58,12 @@ export interface CalilBridge {
   checkAvailability(isbns: string[], systemIds: string[]): Promise<CollectionCache>
   moveBooks(isbns: string[], destination: MoveDestination): Promise<AppState>
   openExternal(url: string): Promise<void>
+  openReservePage(isbn: string, systemId: string): Promise<void>
   openLogs(): Promise<string>
   logRendererError(details: { type: string; message: string; stack?: string }): void
   onProgress(callback: (progress: Progress) => void): () => void
   onAvailabilityUpdate(callback: (update: AvailabilityUpdate) => void): () => void
+  onNdcUpdate(callback: (update: NdcUpdate) => void): () => void
 }
 
 declare global {

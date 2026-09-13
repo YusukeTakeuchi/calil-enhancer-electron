@@ -17,6 +17,7 @@ function App() {
   const [progress, setProgress] = useState<Progress | null>(null)
   const [liveRecords, setLiveRecords] = useState<AppState['collectionCache']>({})
   const [checkingIsbns, setCheckingIsbns] = useState<Set<string>>(new Set())
+  const [autoCheckAvailability, setAutoCheckAvailability] = useState(false)
   const [sideTab, setSideTab] = useState<'ndc' | 'data'>('ndc')
   const [loginState, setLoginState] = useState<'unknown' | 'yes' | 'no'>('unknown')
 
@@ -28,9 +29,15 @@ function App() {
       setLiveRecords((current) => mergeCollectionCache(current, update.books))
       if (update.complete) setCheckingIsbns(new Set())
     })
+    const stopNdc = window.calil.onNdcUpdate((update) => {
+      if (Object.keys(update.ndc).length) {
+        setState((current) => current ? { ...current, ndc: { ...current.ndc, ...update.ndc } } : current)
+      }
+    })
     return () => {
       stopProgress()
       stopAvailability()
+      stopNdc()
     }
   }, [])
 
@@ -63,6 +70,7 @@ function App() {
     try {
       const next = await window.calil.syncWishlist()
       setState(next)
+      setAutoCheckAvailability(false)
       setLoginState('yes')
       setNotice({ kind: 'success', text: `${next.books.length}冊の読みたいリストを同期しました。` })
     } catch (error) {
@@ -74,9 +82,11 @@ function App() {
     }
   }
 
-  async function checkAvailability() {
-    if (!state || pageBooks.length === 0 || state.systems.length === 0) return
-    const targetIsbns = pageBooks.map((book) => book.id)
+  async function checkAvailability(
+    targetIsbns = pageBooks.map((book) => book.id),
+    enableAutomaticPageChecks = true,
+  ) {
+    if (!state || targetIsbns.length === 0 || state.systems.length === 0 || busy) return
     setLiveRecords({})
     setCheckingIsbns(new Set(targetIsbns))
     setBusy(true)
@@ -84,7 +94,7 @@ function App() {
     try {
       await window.calil.checkAvailability(targetIsbns, state.systems.map((system) => system.id))
       setState(await window.calil.loadState())
-      setNotice({ kind: 'success', text: '表示中の本の蔵書状況を更新しました。' })
+      if (enableAutomaticPageChecks) setAutoCheckAvailability(true)
     } catch (error) {
       setState(await window.calil.loadState())
       setNotice({ kind: 'error', text: messageOf(error) })
@@ -93,6 +103,16 @@ function App() {
       setProgress(null)
       setCheckingIsbns(new Set())
       setLiveRecords({})
+    }
+  }
+
+  function changePage(nextPage: number) {
+    if (busy) return
+    const nextBooks = filteredBooks.slice((nextPage - 1) * booksPerPage, nextPage * booksPerPage)
+    setPage(nextPage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (autoCheckAvailability) {
+      void checkAvailability(nextBooks.map((book) => book.id), false)
     }
   }
 
@@ -182,7 +202,7 @@ function App() {
                 <option value="3">★★★</option>
               </select>
             </label>
-            <button className="button availability-button" disabled={busy || pageBooks.length === 0 || state.systems.length === 0} onClick={checkAvailability}>
+            <button className="button availability-button" disabled={busy || pageBooks.length === 0 || state.systems.length === 0} onClick={() => checkAvailability()}>
               蔵書を確認
             </button>
           </div>
@@ -220,7 +240,7 @@ function App() {
                 ))}
               </div>
 
-              {filteredBooks.length > booksPerPage && <Pagination page={safePage} maxPage={maxPage} onPage={(next) => { setPage(next); window.scrollTo({ top: 0, behavior: 'smooth' }) }} />}
+              {filteredBooks.length > booksPerPage && <Pagination page={safePage} maxPage={maxPage} disabled={busy} onPage={changePage} />}
             </section>
 
             <Sidebar tab={sideTab} onTab={setSideTab} state={state} onSearchNdc={(code) => setQuery(`ndc:${code}(${ndcLabel(code)})`)} onState={setState} onNotice={setNotice} />
@@ -267,13 +287,13 @@ function BookRow({ book, systems, records, liveRecords, checking, ndc, rating, s
 }) {
   return <article className={`book-row ${selected ? 'selected' : ''} ${checking ? 'checking' : ''}`}>
     <label className="book-check"><input type="checkbox" checked={selected} onChange={onToggle} /><span /></label>
-    <button className="cover-button" onClick={() => window.calil.openExternal(`https://calil.jp/book/${encodeURIComponent(book.id)}`)} title="カーリルで本を開く">
+    <button className="cover-button" onClick={() => openExternal(`https://calil.jp/book/${encodeURIComponent(book.id)}`)} title="カーリルで本を開く">
       <img src={`https://calil.jp/cover/${encodeURIComponent(book.id)}`} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} />
       <span>BOOK</span>
     </button>
     <div className="book-info">
-      <button className="book-title" onClick={() => window.calil.openExternal(`https://calil.jp/book/${encodeURIComponent(book.id)}`)}>{book.title}</button>
-      <button className="author" onClick={() => window.calil.openExternal(`https://calil.jp/search?q=${encodeURIComponent(`author:${book.author}`)}`)}>{book.author || '著者不明'}</button>
+      <button className="book-title" onClick={() => openExternal(`https://calil.jp/book/${encodeURIComponent(book.id)}`)}>{book.title}</button>
+      <button className="author" onClick={() => openExternal(`https://calil.jp/search?q=${encodeURIComponent(`author:${book.author}`)}`)}>{book.author || '著者不明'}</button>
       <div className="book-tags"><span>ISBN {book.id}</span>{ndc && <span className="ndc-chip">NDC {ndc} · {ndcLabel(ndc)}</span>}</div>
       <StarRating value={rating} onChange={onRate} />
     </div>
@@ -282,13 +302,13 @@ function BookRow({ book, systems, records, liveRecords, checking, ndc, rating, s
         const liveRecord = liveRecords[system.id]
         const hasPartialResult = Boolean(liveRecord && Object.keys(liveRecord.libkey ?? {}).length)
         const record = isResolvedRecord(liveRecord) || hasPartialResult ? liveRecord : records[system.id]
-        return <SystemAvailability key={system.id} system={system} record={record} checking={checking && !isResolvedRecord(liveRecord)} />
+        return <SystemAvailability key={system.id} isbn={book.id} system={system} record={record} checking={checking && !isResolvedRecord(liveRecord)} />
       })}
     </div>
   </article>
 }
 
-function SystemAvailability({ system, record, checking }: { system: LibrarySystem; record?: AvailabilityRecord; checking: boolean }) {
+function SystemAvailability({ isbn, system, record, checking }: { isbn: string; system: LibrarySystem; record?: AvailabilityRecord; checking: boolean }) {
   const aggregate = aggregateStatus(record)
   const libraries = record?.libkey ?? {}
   const cached = record?.status === 'Cache'
@@ -300,7 +320,7 @@ function SystemAvailability({ system, record, checking }: { system: LibrarySyste
         return <span key={library} className={style.tone} title={`${library}: ${style.label}`}>{library}<b>{style.mark}</b></span>
       })}
     </div>}
-    {record?.reserveurl && <button className="reserve-link" onClick={() => window.calil.openExternal(record.reserveurl!)}>予約ページ ↗</button>}
+    {record?.reserveurl && <button className="reserve-link" onClick={() => openReservePage(isbn, system.id)}>予約ページ ↗</button>}
   </div>
 }
 
@@ -373,12 +393,12 @@ function Sidebar({ tab, onTab, state, onSearchNdc, onState, onNotice }: {
   </aside>
 }
 
-function Pagination({ page, maxPage, onPage }: { page: number; maxPage: number; onPage: (page: number) => void }) {
+function Pagination({ page, maxPage, disabled, onPage }: { page: number; maxPage: number; disabled: boolean; onPage: (page: number) => void }) {
   const pages = Array.from({ length: maxPage }, (_, index) => index + 1).filter((value) => value === 1 || value === maxPage || Math.abs(value - page) <= 2)
   return <nav className="pagination" aria-label="ページ">
-    <button disabled={page === 1} onClick={() => onPage(page - 1)}>← 前へ</button>
-    {pages.map((value, index) => <span key={value}>{index > 0 && value - pages[index - 1] > 1 && <i>…</i>}<button className={value === page ? 'active' : ''} onClick={() => onPage(value)}>{value}</button></span>)}
-    <button disabled={page === maxPage} onClick={() => onPage(page + 1)}>次へ →</button>
+    <button disabled={disabled || page === 1} onClick={() => onPage(page - 1)}>← 前へ</button>
+    {pages.map((value, index) => <span key={value}>{index > 0 && value - pages[index - 1] > 1 && <i>…</i>}<button disabled={disabled || value === page} className={value === page ? 'active' : ''} onClick={() => onPage(value)}>{value}</button></span>)}
+    <button disabled={disabled || page === maxPage} onClick={() => onPage(page + 1)}>次へ →</button>
   </nav>
 }
 
@@ -387,6 +407,14 @@ function Spinner() { return <span className="spinner" aria-hidden="true" /> }
 function messageOf(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
   return raw.replace(/^Error invoking remote method '[^']+': Error: /, '')
+}
+
+function openExternal(url: string) {
+  void window.calil.openExternal(url).catch((error) => window.alert(messageOf(error)))
+}
+
+function openReservePage(isbn: string, systemId: string) {
+  void window.calil.openReservePage(isbn, systemId).catch((error) => window.alert(messageOf(error)))
 }
 
 export default App

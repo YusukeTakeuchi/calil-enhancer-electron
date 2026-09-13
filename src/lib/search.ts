@@ -13,7 +13,11 @@ type ParsedQuery = {
 }
 
 export function parseQuery(input: string): ParsedQuery {
-  const tokens = input.match(/(?:[^\s"]+|"[^"]*")+/g) ?? []
+  // Labels added by an NDC sidebar click are display-only annotations. Remove
+  // the whole annotation before tokenizing so spaces in a label do not become
+  // accidental title/author search terms.
+  const searchableInput = input.replace(/(ndc:\s*[0-9.]+)\([^)]*\)/gi, '$1')
+  const tokens = searchableInput.match(/(?:[^\s"]+|"[^"]*")+/g) ?? []
   const text: string[] = []
   const ndcs: string[] = []
   let starRange: ParsedQuery['starRange'] = null

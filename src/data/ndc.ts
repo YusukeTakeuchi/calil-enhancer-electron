@@ -1,16 +1,14 @@
-export const NDC_TOP: Record<string, string> = {
-  '0': '総記',
-  '1': '哲学',
-  '2': '歴史',
-  '3': '社会科学',
-  '4': '自然科学',
-  '5': '技術・工学',
-  '6': '産業',
-  '7': '芸術・美術',
-  '8': '言語',
-  '9': '文学',
-}
+import { NDC_CLASSES } from './ndc-classes'
+
+export const NDC_TOP = Object.fromEntries(
+  Object.entries(NDC_CLASSES[0]).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+)
 
 export function ndcLabel(code: string): string {
-  return NDC_TOP[code.slice(0, 1)] ?? '分類未設定'
+  const digits = code.trim().match(/^\d{1,3}/)?.[0] ?? ''
+  for (let length = Math.min(3, digits.length); length >= 1; length -= 1) {
+    const label = NDC_CLASSES[length - 1]?.[digits.slice(0, length)]
+    if (label) return label
+  }
+  return '分類未設定'
 }
