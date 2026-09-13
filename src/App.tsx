@@ -8,6 +8,7 @@ import appIconUrl from '../build/icon.svg'
 
 type Notice = { kind: 'info' | 'success' | 'error'; text: string } | null
 type HoldingsFilter = { systemId: string; library?: string } | null
+const SIDEBAR_OPEN_KEY = 'calil-enhancer.sidebar-open'
 
 function App() {
   const [state, setState] = useState<AppState | null>(null)
@@ -24,6 +25,9 @@ function App() {
   const [autoCheckAvailability, setAutoCheckAvailability] = useState(false)
   const [availabilityBusy, setAvailabilityBusy] = useState(false)
   const [sideTab, setSideTab] = useState<'ndc' | 'data'>('ndc')
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try { return window.localStorage.getItem(SIDEBAR_OPEN_KEY) !== 'false' } catch { return true }
+  })
   const [loginState, setLoginState] = useState<'unknown' | 'yes' | 'no'>('unknown')
   const availabilityBusyRef = useRef(false)
   const availabilityRequestIdRef = useRef(0)
@@ -195,17 +199,32 @@ function App() {
   const last = Math.min(safePage * booksPerPage, filteredBooks.length)
   const hasPagination = filteredBooks.length > booksPerPage
 
+  function toggleSidebar() {
+    setSidebarOpen((current) => {
+      const next = !current
+      try { window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(next)) } catch { /* Keep the in-memory preference. */ }
+      return next
+    })
+  }
+
   return (
     <div className={`app-shell ${hasPagination ? 'has-pagination' : ''}`}>
       <header className="app-header">
-        <button className="brand" onClick={() => { setQuery(''); setStarFilter('none') }}>
-          <img className="brand-mark" src={appIconUrl} alt="" />
-          <strong>Calil Enhancer</strong>
-        </button>
+        <div className="header-leading">
+          <button className="brand" onClick={() => { setQuery(''); setStarFilter('none') }}>
+            <img className="brand-mark" src={appIconUrl} alt="" />
+            <strong>Calil Enhancer</strong>
+          </button>
+        </div>
         <div className="header-actions">
           <span className={`login-pill ${loginState}`}><i />{loginState === 'yes' ? 'ログイン済み' : loginState === 'no' ? '未ログイン' : '確認中'}</span>
           <button className="button ghost" onClick={() => window.calil.openLogin()}>カーリルにログイン</button>
           <button className="button primary" disabled={busy} onClick={sync}>読みたいリストを同期</button>
+          {state.books.length > 0 && <button className="sidebar-toggle" type="button" aria-controls="app-sidebar" aria-expanded={sidebarOpen} aria-label={sidebarOpen ? 'サイドパネルを閉じる' : 'サイドパネルを開く'} title={sidebarOpen ? 'サイドパネルを閉じる' : 'サイドパネルを開く'} onClick={toggleSidebar}>
+            {sidebarOpen
+              ? <svg className="sidebar-toggle-close" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="2.5" /><path d="M13 3.5v13" /><path d="m8 7 3 3-3 3" /></svg>
+              : <svg className="sidebar-toggle-open" viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="2.5" /><path d="M13 3.5v13" /><path d="m10 7-3 3 3 3" /></svg>}
+          </button>}
         </div>
       </header>
 
@@ -250,7 +269,7 @@ function App() {
         {state.books.length === 0 ? (
           <EmptyState loginState={loginState} busy={busy} onLogin={() => window.calil.openLogin()} onSync={sync} />
         ) : (
-          <div className="workspace">
+          <div className={`workspace ${sidebarOpen ? '' : 'sidebar-closed'}`}>
             <section className="results" aria-label="検索結果">
               <div className="results-meta">
                 <span>{filteredBooks.length === 0 ? '該当する本はありません' : `${filteredBooks.length}冊中 ${first}–${last}冊`}</span>
@@ -279,7 +298,7 @@ function App() {
               {hasPagination && <Pagination page={safePage} maxPage={maxPage} disabled={busy && !availabilityBusy} onPage={changePage} />}
             </section>
 
-            <Sidebar tab={sideTab} onTab={setSideTab} state={state} onSearchNdc={(code) => setQuery(`ndc:${code}(${ndcLabel(code)})`)} onState={setState} onNotice={setNotice} />
+            <Sidebar open={sidebarOpen} tab={sideTab} onTab={setSideTab} state={state} onSearchNdc={(code) => setQuery(`ndc:${code}(${ndcLabel(code)})`)} onState={setState} onNotice={setNotice} />
           </div>
         )}
       </main>
@@ -368,7 +387,8 @@ function StarRating({ value, onChange }: { value: number; onChange: (rate: numbe
   </div>
 }
 
-function Sidebar({ tab, onTab, state, onSearchNdc, onState, onNotice }: {
+function Sidebar({ open, tab, onTab, state, onSearchNdc, onState, onNotice }: {
+  open: boolean
   tab: 'ndc' | 'data'
   onTab: (tab: 'ndc' | 'data') => void
   state: AppState
@@ -415,7 +435,7 @@ function Sidebar({ tab, onTab, state, onSearchNdc, onState, onNotice }: {
     } catch (error) { onNotice({ kind: 'error', text: messageOf(error) }) }
   }
 
-  return <aside className="sidebar">
+  return <aside id="app-sidebar" className="sidebar" aria-hidden={!open} inert={!open}>
     <div className="sidebar-tabs"><button className={tab === 'ndc' ? 'active' : ''} onClick={() => onTab('ndc')}>NDC 分類</button><button className={tab === 'data' ? 'active' : ''} onClick={() => onTab('data')}>データ・設定</button></div>
     {tab === 'ndc' ? <div className="ndc-panel">
       <div className="ndc-accordion">
