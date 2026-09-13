@@ -4,6 +4,7 @@ import { matchesBook } from './lib/search'
 import { paginationPages } from './lib/pagination'
 import { NDC_TOP, ndcLabel } from './data/ndc'
 import type { AppState, AvailabilityRecord, Book, LibrarySystem, MoveDestination, Progress } from './types'
+import appIconUrl from '../build/icon.svg'
 
 type Notice = { kind: 'info' | 'success' | 'error'; text: string } | null
 type HoldingsFilter = { systemId: string; library?: string } | null
@@ -198,8 +199,8 @@ function App() {
     <div className={`app-shell ${hasPagination ? 'has-pagination' : ''}`}>
       <header className="app-header">
         <button className="brand" onClick={() => { setQuery(''); setStarFilter('none') }}>
-          <span className="brand-mark" aria-hidden="true">C<span>＋</span></span>
-          <span><strong>Calil Enhancer</strong><small>読みたい本を、借りられる本へ。</small></span>
+          <img className="brand-mark" src={appIconUrl} alt="" />
+          <strong>Calil Enhancer</strong>
         </button>
         <div className="header-actions">
           <span className={`login-pill ${loginState}`}><i />{loginState === 'yes' ? 'ログイン済み' : loginState === 'no' ? '未ログイン' : '確認中'}</span>
@@ -210,10 +211,6 @@ function App() {
 
       <main className="page">
         <section className="search-panel">
-          <div className="search-title">
-            <div><span className="eyebrow">MY READING LIST</span><h1>次に読む一冊を探す</h1></div>
-            <span className="book-total"><strong>{state.books.length}</strong> 冊</span>
-          </div>
           <div className="search-controls">
             <label className="search-box">
               <span aria-hidden="true">⌕</span>
