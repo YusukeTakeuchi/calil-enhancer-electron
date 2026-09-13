@@ -111,7 +111,7 @@ function App() {
     if (busy) return
     const nextBooks = filteredBooks.slice((nextPage - 1) * booksPerPage, nextPage * booksPerPage)
     setPage(nextPage)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    window.scrollTo({ top: 0 })
     if (autoCheckAvailability) {
       void checkAvailability(nextBooks.map((book) => book.id), false)
     }
