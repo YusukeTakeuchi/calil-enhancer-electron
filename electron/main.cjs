@@ -2,7 +2,13 @@ const { app, BrowserWindow, ipcMain, Menu, screen, session, shell } = require('e
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createLogger } = require('./logger.cjs')
-const { createNdlSruUrl, extractNdcFromXml, extractSruDiagnostic, isValidNdc } = require('./ndl.cjs')
+const {
+  createNdlSruUrl,
+  extractNdcFromXml,
+  extractSruDiagnostic,
+  isValidNdc,
+  selectNdcFetchTargets,
+} = require('./ndl.cjs')
 const { getAuthorizedReserveUrl, parseExternalHttpsUrl } = require('./external-url.cjs')
 const { isWindowBounds, normalizeWindowBounds } = require('./window-bounds.cjs')
 
@@ -16,6 +22,7 @@ const DEFAULT_STATE = {
   systems: [],
   stars: {},
   ndc: {},
+  ndcFailed: {},
   collectionCache: {},
   options: { booksPerPage: 20 },
   lastSyncedAt: null,
@@ -76,6 +83,9 @@ async function loadState() {
       systems: Array.isArray(data.systems) ? data.systems : [],
       stars: isRecord(data.stars) ? data.stars : {},
       ndc: isRecord(data.ndc) ? data.ndc : {},
+      ndcFailed: isRecord(data.ndcFailed)
+        ? Object.fromEntries(Object.entries(data.ndcFailed).filter(([, failed]) => failed === true))
+        : {},
       collectionCache: isRecord(data.collectionCache) ? data.collectionCache : {},
       options: { ...DEFAULT_STATE.options, ...(isRecord(data.options) ? data.options : {}) },
     }
@@ -292,7 +302,12 @@ async function syncWishlist() {
   })
 
   const state = await loadState()
-  const missingNdc = books.map((book) => book.id).filter((isbn) => !isValidNdc(state.ndc[isbn]))
+  const bookIsbns = books.map((book) => book.id)
+  const missingNdc = selectNdcFetchTargets(bookIsbns, state.ndc, state.ndcFailed)
+  const skippedNdc = bookIsbns.filter((isbn) => !isValidNdc(state.ndc[isbn]) && state.ndcFailed[isbn] === true)
+  if (skippedNdc.length) {
+    logInfo('ndc.fetch-skipped', { failedIsbnCount: skippedNdc.length })
+  }
   if (missingNdc.length) {
     try {
       await fetchNdc(missingNdc)
@@ -308,12 +323,15 @@ async function syncWishlist() {
 async function fetchNdc(isbns) {
   const result = {}
   let pending = {}
+  let attempted = []
   let failedRequests = 0
   let batchRequested = 0
   let batchFetched = 0
   for (let index = 0; index < isbns.length; index += 1) {
     emitProgress('NDC 分類を取得中', index, isbns.length)
-    const url = createNdlSruUrl(isbns[index])
+    const isbn = isbns[index]
+    const url = createNdlSruUrl(isbn)
+    attempted.push(isbn)
     batchRequested += 1
     try {
       let response
@@ -338,16 +356,25 @@ async function fetchNdc(isbns) {
     const processed = index + 1
     if (processed % 20 === 0 || processed === isbns.length) {
       const committed = pending
+      const completed = attempted
       pending = {}
+      attempted = []
+      // Save successes and failures incrementally so an interruption cannot discard earlier attempts.
+      await updateState((state) => {
+        Object.assign(state.ndc, committed)
+        for (const attemptedIsbn of completed) {
+          if (isValidNdc(committed[attemptedIsbn])) delete state.ndcFailed[attemptedIsbn]
+          else state.ndcFailed[attemptedIsbn] = true
+        }
+      })
       if (Object.keys(committed).length) {
-        // Save and render incrementally so an interruption cannot discard earlier results.
-        await updateState((state) => Object.assign(state.ndc, committed))
         emitNdcUpdate(committed)
       }
       logInfo('ndc.batch-completed', {
         processed,
         requestedCount: batchRequested,
         fetchedCount: batchFetched,
+        failedCount: completed.filter((attemptedIsbn) => !isValidNdc(committed[attemptedIsbn])).length,
       })
       batchRequested = 0
       batchFetched = 0
@@ -359,6 +386,7 @@ async function fetchNdc(isbns) {
   logInfo('ndc.fetch-completed', {
     requestedCount: isbns.length,
     fetchedCount: Object.keys(result).length,
+    failedCount: isbns.filter((isbn) => !isValidNdc(result[isbn])).length,
     failedRequests,
   })
   return result
@@ -528,6 +556,7 @@ function registerIpc() {
     state.books = []
     state.systems = []
     state.ndc = {}
+    state.ndcFailed = {}
     state.collectionCache = {}
     state.lastSyncedAt = null
   }), { trace: true })

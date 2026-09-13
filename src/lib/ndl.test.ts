@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest'
 // @ts-expect-error There is no separate declaration file for this internal module.
 import ndl from '../../electron/ndl.cjs'
 
-const { createNdlSruUrl, extractNdcFromXml, extractSruDiagnostic, isbn13to10, isValidNdc } = ndl
+const {
+  createNdlSruUrl,
+  extractNdcFromXml,
+  extractSruDiagnostic,
+  isbn13to10,
+  isValidNdc,
+  selectNdcFetchTargets,
+} = ndl
 
 describe('NDL classification parser', () => {
   it('ignores self-closing NDC links and reads the classification value', () => {
@@ -53,5 +60,13 @@ describe('NDL classification parser', () => {
     expect(extractSruDiagnostic(`
       <diagnostics><diagnostic><message>illegal query syntax</message></diagnostic></diagnostics>
     `)).toBe('illegal query syntax')
+  })
+
+  it('does not fetch an ISBN again after a failed NDC attempt', () => {
+    expect(selectNdcFetchTargets(
+      ['success', 'failed', 'new', 'new'],
+      { success: '913.6' },
+      { failed: true },
+    )).toEqual(['new'])
   })
 })

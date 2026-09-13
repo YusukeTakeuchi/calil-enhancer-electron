@@ -24,6 +24,7 @@ export type AppState = {
   systems: LibrarySystem[]
   stars: Record<string, number>
   ndc: Record<string, string>
+  ndcFailed: Record<string, true>
   collectionCache: CollectionCache
   options: { booksPerPage: number }
   lastSyncedAt: string | null

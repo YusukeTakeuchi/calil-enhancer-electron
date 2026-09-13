@@ -13,6 +13,7 @@ const previewState: AppState = {
   ],
   stars: { '4101010013': 3, '4003101014': 2 },
   ndc: { '4101010013': '913.6', '4003101014': '913.6', '4101092055': '913.6' },
+  ndcFailed: {},
   collectionCache: {
     '4101010013': {
       Tokyo_Setagaya: { status: 'OK', reserveurl: 'https://calil.jp/', libkey: { 中央: '貸出可', 経堂: '貸出中' } },
@@ -38,7 +39,7 @@ export function installDevBridge() {
       return structuredClone(state.stars)
     },
     saveOptions: async (options) => { state.options = options; return structuredClone(state) },
-    clearLocalData: async () => { state = { ...state, books: [], systems: [], ndc: {}, collectionCache: {}, lastSyncedAt: null }; return structuredClone(state) },
+    clearLocalData: async () => { state = { ...state, books: [], systems: [], ndc: {}, ndcFailed: {}, collectionCache: {}, lastSyncedAt: null }; return structuredClone(state) },
     openLogin: async () => true,
     checkLogin: async () => true,
     syncWishlist: async () => structuredClone(state),

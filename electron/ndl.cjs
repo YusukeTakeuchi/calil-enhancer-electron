@@ -21,6 +21,15 @@ function isValidNdc(value) {
   return typeof value === 'string' && /^\d{1,3}(?:\.\d+)?$/.test(value.trim())
 }
 
+function selectNdcFetchTargets(isbns, ndc = {}, failed = {}) {
+  const seen = new Set()
+  return isbns.filter((isbn) => {
+    if (seen.has(isbn)) return false
+    seen.add(isbn)
+    return !isValidNdc(ndc[isbn]) && failed[isbn] !== true
+  })
+}
+
 function createNdlSruUrl(isbn) {
   const url = new URL('https://ndlsearch.ndl.go.jp/api/sru')
   url.searchParams.set('operation', 'searchRetrieve')
@@ -87,4 +96,5 @@ module.exports = {
   isbn13to10,
   isValidNdc,
   normalizeNdc,
+  selectNdcFetchTargets,
 }
