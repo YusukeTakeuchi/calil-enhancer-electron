@@ -551,6 +551,41 @@ function createWindow() {
   else mainWindow.loadURL('http://localhost:5173')
 }
 
+async function restartApplication() {
+  try {
+    await writeQueue
+    logInfo('app.restart-requested')
+    await logger?.flush()
+  } catch (error) {
+    console.error('[app.restart-preparation-failed]', error)
+  } finally {
+    app.relaunch()
+    app.exit(0)
+  }
+}
+
+function createApplicationMenu() {
+  const fileMenu = {
+    label: 'File',
+    submenu: [
+      {
+        label: '再起動',
+        accelerator: 'CmdOrCtrl+Shift+R',
+        click: () => { void restartApplication() },
+      },
+      { type: 'separator' },
+      { role: process.platform === 'darwin' ? 'close' : 'quit' },
+    ],
+  }
+  return Menu.buildFromTemplate([
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+    fileMenu,
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ])
+}
+
 app.whenReady().then(() => {
   logger = createLogger({ filePath: path.join(app.getPath('logs'), 'main.log') })
   logInfo('app.started', {
@@ -564,13 +599,7 @@ app.whenReady().then(() => {
   })
   calilSession = session.fromPartition(CALIL_PARTITION)
   registerIpc()
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
-    { role: 'fileMenu' },
-    { role: 'editMenu' },
-    { role: 'viewMenu' },
-    { role: 'windowMenu' },
-  ]))
+  Menu.setApplicationMenu(createApplicationMenu())
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
