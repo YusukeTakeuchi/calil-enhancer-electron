@@ -101,7 +101,7 @@ h1 { font-family: Georgia, "Yu Mincho", serif; font-size: 27px; margin: 4px 0 0;
 .select-all { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; padding: 5px 5px 10px; cursor: pointer; }
 .select-all input { accent-color: var(--green); }
 .book-list { display: flex; flex-direction: column; gap: 10px; }
-.book-row { display: grid; grid-template-columns: 28px 74px minmax(190px, .8fr) minmax(260px, 1.2fr); gap: 14px; align-items: stretch; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 14px; transition: .18s ease; min-height: 136px; box-shadow: 0 3px 14px rgba(39, 45, 40, .035); }
+.book-row { display: grid; grid-template-columns: 24px 62px minmax(190px, .8fr) minmax(260px, 1.2fr); gap: 12px; align-items: stretch; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 11px; transition: .18s ease; min-height: 110px; box-shadow: 0 3px 14px rgba(39, 45, 40, .035); }
 .book-row:hover { border-color: #c5c8bd; box-shadow: 0 7px 22px rgba(39, 45, 40, .07); }
 .book-row.selected { border-color: #82a894; background: #fbfff9; box-shadow: 0 0 0 2px rgba(37, 95, 74, .08); }
 .book-check { display: flex; justify-content: center; padding-top: 4px; cursor: pointer; }
@@ -109,7 +109,7 @@ h1 { font-family: Georgia, "Yu Mincho", serif; font-size: 27px; margin: 4px 0 0;
 .book-check span { width: 17px; height: 17px; border: 1px solid #bfc2bb; border-radius: 4px; background: white; position: relative; }
 .book-check input:checked + span { background: var(--green); border-color: var(--green); }
 .book-check input:checked + span::after { content: "✓"; color: white; position: absolute; inset: -2px 0 0; text-align: center; font-size: 13px; }
-.cover-button { width: 74px; height: 106px; align-self: start; position: relative; display: grid; place-items: center; border: 0; border-radius: 4px 9px 9px 4px; overflow: hidden; padding: 0; cursor: pointer; background: linear-gradient(145deg, #dce2d8, #bacabd); box-shadow: 3px 4px 8px rgba(40, 48, 42, .18); }
+.cover-button { width: 62px; height: 88px; align-self: start; position: relative; display: grid; place-items: center; border: 0; border-radius: 4px 9px 9px 4px; overflow: hidden; padding: 0; cursor: pointer; background: linear-gradient(145deg, #dce2d8, #bacabd); box-shadow: 3px 4px 8px rgba(40, 48, 42, .18); }
 .cover-button::before { content: ""; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: rgba(0, 0, 0, .14); z-index: 2; }
 .cover-button img { position: absolute; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
 .cover-button span { font: 700 9px Georgia, serif; letter-spacing: .12em; color: #5d6c61; }
@@ -126,7 +126,8 @@ h1 { font-family: Georgia, "Yu Mincho", serif; font-size: 27px; margin: 4px 0 0;
 .star-rating button:hover { transform: scale(1.2); color: #e0a247; }
 .star-rating button.filled { color: #d99435; text-shadow: 0 1px 0 #fff; }
 .availability-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 7px; align-content: stretch; }
-.system-card { border: 1px solid #deded7; border-radius: 9px; padding: 9px 10px; background: #f5f5f0; position: relative; overflow: hidden; min-width: 0; }
+.system-card { border: 1px solid #deded7; border-radius: 9px; padding: 7px 9px; background: #f5f5f0; position: relative; overflow: visible; min-width: 0; }
+.system-card:hover, .system-card:focus-within { z-index: 20; }
 .system-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #bfc1bb; }
 .system-card.available { background: #edf7fa; border-color: #c8dfe7; }.system-card.available::before { background: var(--blue); }
 .system-card.owned { background: #eef7ed; border-color: #ccdfc9; }.system-card.owned::before { background: #5c9a5c; }
@@ -142,9 +143,12 @@ h1 { font-family: Georgia, "Yu Mincho", serif; font-size: 27px; margin: 4px 0 0;
 .system-heading > span:last-child { display: flex; flex-direction: column; min-width: 0; }
 .system-heading strong { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .system-heading small { font-size: 9px; color: var(--muted); margin-top: 1px; }
-.library-statuses { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 8px; }
-.library-statuses span { display: flex; gap: 4px; align-items: center; font-size: 8px; border-radius: 4px; background: rgba(255, 255, 255, .8); padding: 3px 4px; color: #656a65; max-width: 100%; }
+.library-status-wrap { position: relative; min-width: 0; margin-top: 6px; outline: none; }
+.library-statuses { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.library-statuses span { display: inline-flex; gap: 4px; align-items: center; margin-right: 3px; font-size: 8px; border-radius: 4px; background: rgba(255, 255, 255, .8); padding: 3px 4px; color: #656a65; max-width: 100%; vertical-align: middle; }
 .library-statuses span b { font-size: 9px; }.library-statuses .available b { color: var(--blue); }.library-statuses .waiting b { color: var(--orange); }
+.library-tooltip { position: absolute; z-index: 30; top: calc(100% + 7px); right: 0; width: max-content; max-width: 360px; padding: 8px 10px; border-radius: 7px; background: #26372e; color: white; box-shadow: 0 8px 24px rgba(25, 35, 29, .28); font-size: 10px; line-height: 1.55; white-space: normal; opacity: 0; visibility: hidden; transform: translateY(-3px); transition: opacity .12s ease, transform .12s ease, visibility .12s; pointer-events: none; }
+.library-status-wrap:hover .library-tooltip, .library-status-wrap:focus .library-tooltip { opacity: 1; visibility: visible; transform: translateY(0); }
 .reserve-link { border: 0; border-bottom: 1px solid currentColor; background: none; padding: 0; color: var(--green); font-size: 9px; margin-top: 7px; cursor: pointer; }
 .no-library { display: grid; place-items: center; color: var(--muted); background: #f2f1eb; border: 1px dashed #c9cbc4; border-radius: 8px; font-size: 11px; }
 
@@ -192,8 +196,8 @@ h1 { font-family: Georgia, "Yu Mincho", serif; font-size: 27px; margin: 4px 0 0;
 
 @media (max-width: 1150px) {
   .page { padding-inline: 24px; }
-  .book-row { grid-template-columns: 24px 66px minmax(180px, .7fr) minmax(220px, 1fr); }
-  .cover-button { width: 66px; height: 96px; }
+  .book-row { grid-template-columns: 22px 58px minmax(180px, .7fr) minmax(220px, 1fr); }
+  .cover-button { width: 58px; height: 82px; }
   .workspace { grid-template-columns: minmax(0, 1fr) 260px; }
   .header-actions .login-pill { display: none; }
 }

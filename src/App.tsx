@@ -311,13 +311,17 @@ function BookRow({ book, systems, records, liveRecords, checking, ndc, rating, s
 function SystemAvailability({ isbn, system, record, fromLocalCache, checking }: { isbn: string; system: LibrarySystem; record?: AvailabilityRecord; fromLocalCache: boolean; checking: boolean }) {
   const aggregate = aggregateStatus(record)
   const libraries = record?.libkey ?? {}
+  const librarySummary = system.libraries.map((library) => `${library}: ${statusStyle(libraries[library]).label}`).join(' / ')
   return <div className={`system-card ${record ? aggregate.tone : 'unknown'} ${fromLocalCache ? 'cached' : ''} ${checking ? 'checking' : ''}`}>
     <div className="system-heading"><span className="status-mark">{checking ? <i className="system-spinner" /> : record ? aggregate.mark : '–'}</span><span><strong>{system.name}</strong><small>{record ? aggregate.label : checking ? '確認中' : '未確認'}{fromLocalCache ? ' · ローカルキャッシュ' : ''}{checking && record ? ' · 更新中' : ''}</small></span></div>
-    {record && <div className="library-statuses">
-      {system.libraries.map((library) => {
-        const style = statusStyle(libraries[library])
-        return <span key={library} className={style.tone} title={`${library}: ${style.label}`}>{library}<b>{style.mark}</b></span>
-      })}
+    {record && <div className="library-status-wrap" tabIndex={0} aria-label={librarySummary}>
+      <div className="library-statuses">
+        {system.libraries.map((library) => {
+          const style = statusStyle(libraries[library])
+          return <span key={library} className={style.tone}>{library}<b>{style.mark}</b></span>
+        })}
+      </div>
+      {librarySummary && <div className="library-tooltip" role="tooltip">{librarySummary}</div>}
     </div>}
     {record?.reserveurl && <button className="reserve-link" onClick={() => openReservePage(isbn, system.id)}>予約ページ ↗</button>}
   </div>
