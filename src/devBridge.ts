@@ -43,6 +43,7 @@ export function installDevBridge() {
     checkLogin: async () => true,
     syncWishlist: async () => structuredClone(state),
     checkAvailability: async () => structuredClone(state.collectionCache) as CollectionCache,
+    cancelAvailability: async () => true,
     moveBooks: async (isbns) => { state.books = state.books.filter((book) => !isbns.includes(book.id)); return structuredClone(state) },
     openExternal: async () => undefined,
     openReservePage: async () => undefined,

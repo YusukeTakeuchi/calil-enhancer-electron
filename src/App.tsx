@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { aggregateStatus, isResolvedRecord, mergeCollectionCache, selectAvailabilityRecord, statusStyle } from './lib/availability'
 import { matchesBook } from './lib/search'
 import { paginationPages } from './lib/pagination'
@@ -19,8 +19,11 @@ function App() {
   const [liveRecords, setLiveRecords] = useState<AppState['collectionCache']>({})
   const [checkingIsbns, setCheckingIsbns] = useState<Set<string>>(new Set())
   const [autoCheckAvailability, setAutoCheckAvailability] = useState(false)
+  const [availabilityBusy, setAvailabilityBusy] = useState(false)
   const [sideTab, setSideTab] = useState<'ndc' | 'data'>('ndc')
   const [loginState, setLoginState] = useState<'unknown' | 'yes' | 'no'>('unknown')
+  const availabilityBusyRef = useRef(false)
+  const availabilityRequestIdRef = useRef(0)
 
   useEffect(() => {
     window.calil.loadState().then(setState).catch((error) => setNotice({ kind: 'error', text: messageOf(error) }))
@@ -87,33 +90,48 @@ function App() {
     targetIsbns = pageBooks.map((book) => book.id),
     enableAutomaticPageChecks = true,
   ) {
-    if (!state || targetIsbns.length === 0 || state.systems.length === 0 || busy) return
+    if (!state || targetIsbns.length === 0 || state.systems.length === 0) return
+    const replacingActiveRequest = availabilityBusyRef.current
+    if (busy && !replacingActiveRequest) return
+    const requestId = ++availabilityRequestIdRef.current
+    if (replacingActiveRequest) {
+      await window.calil.cancelAvailability()
+      if (requestId !== availabilityRequestIdRef.current) return
+    }
+    availabilityBusyRef.current = true
+    setAvailabilityBusy(true)
+    if (enableAutomaticPageChecks) setAutoCheckAvailability(true)
     setLiveRecords({})
     setCheckingIsbns(new Set(targetIsbns))
     setBusy(true)
     setNotice(null)
     try {
       await window.calil.checkAvailability(targetIsbns, state.systems.map((system) => system.id))
+      if (requestId !== availabilityRequestIdRef.current) return
       setState(await window.calil.loadState())
-      if (enableAutomaticPageChecks) setAutoCheckAvailability(true)
     } catch (error) {
+      if (requestId !== availabilityRequestIdRef.current) return
       setState(await window.calil.loadState())
       setNotice({ kind: 'error', text: messageOf(error) })
     } finally {
-      setBusy(false)
-      setProgress(null)
-      setCheckingIsbns(new Set())
+      if (requestId === availabilityRequestIdRef.current) {
+        availabilityBusyRef.current = false
+        setAvailabilityBusy(false)
+        setBusy(false)
+        setProgress(null)
+        setCheckingIsbns(new Set())
+      }
     }
   }
 
   function changePage(nextPage: number) {
-    if (busy) return
+    const wasCheckingAvailability = availabilityBusyRef.current
+    if (busy && !wasCheckingAvailability) return
     const nextBooks = filteredBooks.slice((nextPage - 1) * booksPerPage, nextPage * booksPerPage)
+    const nextIsbns = nextBooks.map((book) => book.id)
     setPage(nextPage)
     window.scrollTo({ top: 0 })
-    if (autoCheckAvailability) {
-      void checkAvailability(nextBooks.map((book) => book.id), false)
-    }
+    if (autoCheckAvailability || wasCheckingAvailability) void checkAvailability(nextIsbns, false)
   }
 
   async function setRating(isbn: string, rate: number) {
@@ -241,7 +259,7 @@ function App() {
                 ))}
               </div>
 
-              {hasPagination && <Pagination page={safePage} maxPage={maxPage} disabled={busy} onPage={changePage} />}
+              {hasPagination && <Pagination page={safePage} maxPage={maxPage} disabled={busy && !availabilityBusy} onPage={changePage} />}
             </section>
 
             <Sidebar tab={sideTab} onTab={setSideTab} state={state} onSearchNdc={(code) => setQuery(`ndc:${code}(${ndcLabel(code)})`)} onState={setState} onNotice={setNotice} />

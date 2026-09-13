@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('calil', {
   syncWishlist: () => ipcRenderer.invoke('calil:sync-wishlist'),
   checkAvailability: (isbns, systemIds) =>
     ipcRenderer.invoke('calil:check-availability', { isbns, systemIds }),
+  cancelAvailability: () => ipcRenderer.invoke('calil:cancel-availability'),
   moveBooks: (isbns, destination) =>
     ipcRenderer.invoke('calil:move-books', { isbns, destination }),
   openExternal: (url) => ipcRenderer.invoke('app:open-external', url),

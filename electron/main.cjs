@@ -8,6 +8,8 @@ const { isWindowBounds, normalizeWindowBounds } = require('./window-bounds.cjs')
 
 const CALIL_APP_KEY = 'e4ee980a3908451a0f4dc8af64ff268b'
 const CALIL_PARTITION = 'persist:calil-enhancer-account'
+const AVAILABILITY_BATCH_SIZE = 20
+const MAX_AVAILABILITY_POLL_ATTEMPTS = 150
 const DEFAULT_STATE = {
   version: 1,
   books: [],
@@ -27,6 +29,7 @@ let writeQueue = Promise.resolve()
 let logger
 let lastProgressStage
 let boundsSaveTimer
+let availabilityAbortController
 
 function logInfo(event, details) {
   logger?.info(event, details)
@@ -162,9 +165,39 @@ async function loggedSessionFetch(url, init = {}, service = 'external') {
     })
     return response
   } catch (error) {
-    logError('http.network-error', error, { ...request, durationMs: Date.now() - startedAt })
+    if (isAbortError(error)) {
+      logInfo('http.aborted', { ...request, durationMs: Date.now() - startedAt })
+    } else {
+      logError('http.network-error', error, { ...request, durationMs: Date.now() - startedAt })
+    }
     throw error
   }
+}
+
+function isAbortError(error) {
+  return Boolean(error && (error.name === 'AbortError' || error.code === 'ABORT_ERR'))
+}
+
+function abortableDelay(milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      const error = new Error('The operation was aborted')
+      error.name = 'AbortError'
+      reject(error)
+      return
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, milliseconds)
+    function onAbort() {
+      clearTimeout(timer)
+      const error = new Error('The operation was aborted')
+      error.name = 'AbortError'
+      reject(error)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 async function calilFetch(url, init = {}, acceptedStatuses = []) {
@@ -340,40 +373,92 @@ function mergeBookRecords(target, source) {
   }
 }
 
+function countResolvedAvailabilityBooks(result, isbns, systemIds) {
+  return isbns.filter((isbn) => systemIds.every((systemId) => {
+    const status = result[isbn]?.[systemId]?.status
+    return status === 'OK' || status === 'Cache'
+  })).length
+}
+
 async function checkAvailability(isbns, systemIds) {
   if (!isbns.length || !systemIds.length) return {}
+  availabilityAbortController?.abort()
+  const controller = new AbortController()
+  availabilityAbortController = controller
   const result = {}
-  let params = new URLSearchParams({
-    appkey: CALIL_APP_KEY,
-    callback: 'no',
-    isbn: isbns.join(','),
-    systemid: systemIds.join(','),
-  })
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    emitProgress('蔵書状況を確認中', attempt, 20)
-    const response = await loggedSessionFetch(`https://api.calil.jp/check?${params}`, {}, 'calil-api')
-    if (!response.ok) throw new Error(`蔵書状況を取得できませんでした (${response.status})`)
-    const data = await response.json()
-    mergeBookRecords(result, data.books)
-    const complete = Number(data.continue) !== 1
-    emitAvailabilityUpdate(data.books, complete)
-    if (complete) break
-    await new Promise((resolve) => setTimeout(resolve, attempt < 3 ? 1000 : attempt < 8 ? 2000 : 4000))
-    params = new URLSearchParams({ appkey: CALIL_APP_KEY, callback: 'no', session: String(data.session) })
-  }
-  await updateState((state) => {
-    for (const [isbn, systems] of Object.entries(result)) {
-      state.collectionCache[isbn] ||= {}
-      for (const [systemId, record] of Object.entries(systems)) {
-        if (record && (record.status === 'OK' || record.status === 'Cache')) {
-          state.collectionCache[isbn][systemId] = record
+  let cancelled = false
+  try {
+    emitProgress('蔵書状況を確認中', 0, isbns.length)
+    for (let offset = 0; offset < isbns.length; offset += AVAILABILITY_BATCH_SIZE) {
+      const batch = isbns.slice(offset, offset + AVAILABILITY_BATCH_SIZE)
+      let params = new URLSearchParams({
+        appkey: CALIL_APP_KEY,
+        callback: 'no',
+        isbn: batch.join(','),
+        systemid: systemIds.join(','),
+      })
+      let batchComplete = false
+      for (let attempt = 0; attempt < MAX_AVAILABILITY_POLL_ATTEMPTS; attempt += 1) {
+        const response = await loggedSessionFetch(
+          `https://api.calil.jp/check?${params}`,
+          { signal: controller.signal },
+          'calil-api',
+        )
+        if (!response.ok) throw new Error(`蔵書状況を取得できませんでした (${response.status})`)
+        const data = await response.json()
+        mergeBookRecords(result, data.books)
+        batchComplete = Number(data.continue) !== 1
+        const allBatchesComplete = batchComplete && offset + batch.length >= isbns.length
+        emitAvailabilityUpdate(data.books, allBatchesComplete)
+        emitProgress(
+          '蔵書状況を確認中',
+          batchComplete
+            ? offset + batch.length
+            : offset + countResolvedAvailabilityBooks(result, batch, systemIds),
+          isbns.length,
+        )
+        if (batchComplete) break
+        await abortableDelay(attempt < 3 ? 1000 : attempt < 8 ? 2000 : 4000, controller.signal)
+        params = new URLSearchParams({ appkey: CALIL_APP_KEY, callback: 'no', session: String(data.session) })
+      }
+      if (!batchComplete) {
+        throw new Error(`蔵書状況の確認がタイムアウトしました (${offset + 1}〜${offset + batch.length}冊目)`)
+      }
+      logInfo('availability.batch-completed', {
+        batchStart: offset + 1,
+        batchEnd: offset + batch.length,
+        requestedCount: isbns.length,
+      })
+    }
+    logInfo('availability.completed', { requestedCount: isbns.length, fetchedBookCount: Object.keys(result).length })
+  } catch (error) {
+    if (!isAbortError(error)) throw error
+    cancelled = true
+    logInfo('availability.cancelled', { isbnCount: isbns.length, fetchedBookCount: Object.keys(result).length })
+  } finally {
+    await updateState((state) => {
+      for (const [isbn, systems] of Object.entries(result)) {
+        state.collectionCache[isbn] ||= {}
+        for (const [systemId, record] of Object.entries(systems)) {
+          if (record && (record.status === 'OK' || record.status === 'Cache')) {
+            state.collectionCache[isbn][systemId] = record
+          }
         }
       }
+    })
+    if (availabilityAbortController === controller) {
+      availabilityAbortController = undefined
+      emitAvailabilityUpdate({}, true)
+      if (!cancelled) emitProgress('蔵書状況の確認完了')
     }
-  })
-  emitAvailabilityUpdate({}, true)
-  emitProgress('蔵書状況の確認完了')
+  }
   return result
+}
+
+function cancelAvailability() {
+  if (!availabilityAbortController) return false
+  availabilityAbortController.abort()
+  return true
 }
 
 async function moveBooks(isbns, destination) {
@@ -456,6 +541,7 @@ function registerIpc() {
       assertStringArray(payload && payload.isbns, 'ISBN'),
       assertStringArray(payload && payload.systemIds, '図書館ID', 30),
     ), { trace: true })
+  handleIpc('calil:cancel-availability', () => cancelAvailability(), { trace: true })
   handleIpc('calil:move-books', (_event, payload) =>
     moveBooks(assertStringArray(payload && payload.isbns, 'ISBN'), payload && payload.destination), { trace: true })
   handleIpc('app:open-external', async (_event, rawUrl) => {

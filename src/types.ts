@@ -56,6 +56,7 @@ export interface CalilBridge {
   checkLogin(): Promise<boolean>
   syncWishlist(): Promise<AppState>
   checkAvailability(isbns: string[], systemIds: string[]): Promise<CollectionCache>
+  cancelAvailability(): Promise<boolean>
   moveBooks(isbns: string[], destination: MoveDestination): Promise<AppState>
   openExternal(url: string): Promise<void>
   openReservePage(isbn: string, systemId: string): Promise<void>
