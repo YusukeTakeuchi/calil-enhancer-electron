@@ -26,6 +26,17 @@ export function isResolvedRecord(record?: AvailabilityRecord): boolean {
   return record?.status === 'OK' || record?.status === 'Cache'
 }
 
+export function selectAvailabilityRecord(
+  liveRecord?: AvailabilityRecord,
+  storedRecord?: AvailabilityRecord,
+): { record?: AvailabilityRecord; fromLocalCache: boolean } {
+  const hasPartialLiveResult = Boolean(liveRecord && Object.keys(liveRecord.libkey ?? {}).length)
+  if (isResolvedRecord(liveRecord) || hasPartialLiveResult) {
+    return { record: liveRecord, fromLocalCache: false }
+  }
+  return { record: storedRecord, fromLocalCache: Boolean(storedRecord) }
+}
+
 export function mergeCollectionCache(base: CollectionCache, update: CollectionCache): CollectionCache {
   const merged = { ...base }
   for (const [isbn, systems] of Object.entries(update)) {

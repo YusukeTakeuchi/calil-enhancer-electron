@@ -133,7 +133,7 @@ h1 { font-family: Georgia, "Yu Mincho", serif; font-size: 27px; margin: 4px 0 0;
 .system-card.onsite { background: #faf0f3; }.system-card.onsite::before { background: #c97991; }
 .system-card.waiting { background: #fff5e9; border-color: #ead6bd; }.system-card.waiting::before { background: var(--orange); }
 .system-card.none::before { background: #afb2ad; }
-.system-card.cached { opacity: .72; }
+.system-card.cached { opacity: .8; filter: saturate(.7); }
 .system-card.checking { box-shadow: inset 0 0 0 1px rgba(37, 95, 74, .08); }
 .system-heading { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .status-mark { font-weight: 800; font-size: 17px; color: #59605a; }

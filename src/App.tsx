@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { aggregateStatus, isResolvedRecord, mergeCollectionCache, statusStyle } from './lib/availability'
+import { aggregateStatus, isResolvedRecord, mergeCollectionCache, selectAvailabilityRecord, statusStyle } from './lib/availability'
 import { matchesBook } from './lib/search'
 import { paginationPages } from './lib/pagination'
 import { NDC_TOP, ndcLabel } from './data/ndc'
@@ -103,7 +103,6 @@ function App() {
       setBusy(false)
       setProgress(null)
       setCheckingIsbns(new Set())
-      setLiveRecords({})
     }
   }
 
@@ -302,20 +301,18 @@ function BookRow({ book, systems, records, liveRecords, checking, ndc, rating, s
     <div className="availability-grid">
       {systems.length === 0 ? <div className="no-library">登録図書館がありません</div> : systems.map((system) => {
         const liveRecord = liveRecords[system.id]
-        const hasPartialResult = Boolean(liveRecord && Object.keys(liveRecord.libkey ?? {}).length)
-        const record = isResolvedRecord(liveRecord) || hasPartialResult ? liveRecord : records[system.id]
-        return <SystemAvailability key={system.id} isbn={book.id} system={system} record={record} checking={checking && !isResolvedRecord(liveRecord)} />
+        const { record, fromLocalCache } = selectAvailabilityRecord(liveRecord, records[system.id])
+        return <SystemAvailability key={system.id} isbn={book.id} system={system} record={record} fromLocalCache={fromLocalCache} checking={checking && !isResolvedRecord(liveRecord)} />
       })}
     </div>
   </article>
 }
 
-function SystemAvailability({ isbn, system, record, checking }: { isbn: string; system: LibrarySystem; record?: AvailabilityRecord; checking: boolean }) {
+function SystemAvailability({ isbn, system, record, fromLocalCache, checking }: { isbn: string; system: LibrarySystem; record?: AvailabilityRecord; fromLocalCache: boolean; checking: boolean }) {
   const aggregate = aggregateStatus(record)
   const libraries = record?.libkey ?? {}
-  const cached = record?.status === 'Cache'
-  return <div className={`system-card ${record ? aggregate.tone : 'unknown'} ${cached ? 'cached' : ''} ${checking ? 'checking' : ''}`}>
-    <div className="system-heading"><span className="status-mark">{checking ? <i className="system-spinner" /> : record ? aggregate.mark : '–'}</span><span><strong>{system.name}</strong><small>{record ? aggregate.label : checking ? '確認中' : '未確認'}{cached ? ' · キャッシュ' : ''}{checking && record ? ' · 更新中' : ''}</small></span></div>
+  return <div className={`system-card ${record ? aggregate.tone : 'unknown'} ${fromLocalCache ? 'cached' : ''} ${checking ? 'checking' : ''}`}>
+    <div className="system-heading"><span className="status-mark">{checking ? <i className="system-spinner" /> : record ? aggregate.mark : '–'}</span><span><strong>{system.name}</strong><small>{record ? aggregate.label : checking ? '確認中' : '未確認'}{fromLocalCache ? ' · ローカルキャッシュ' : ''}{checking && record ? ' · 更新中' : ''}</small></span></div>
     {record && <div className="library-statuses">
       {system.libraries.map((library) => {
         const style = statusStyle(libraries[library])
