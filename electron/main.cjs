@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, Menu, session, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu, screen, session, shell } = require('electron')
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createLogger } = require('./logger.cjs')
 const { createNdlSruUrl, extractNdcFromXml, extractSruDiagnostic, isValidNdc } = require('./ndl.cjs')
 const { getAuthorizedReserveUrl, parseExternalHttpsUrl } = require('./external-url.cjs')
+const { isWindowBounds, normalizeWindowBounds } = require('./window-bounds.cjs')
 
 const CALIL_APP_KEY = 'e4ee980a3908451a0f4dc8af64ff268b'
 const CALIL_PARTITION = 'persist:calil-enhancer-account'
@@ -16,6 +17,7 @@ const DEFAULT_STATE = {
   collectionCache: {},
   options: { booksPerPage: 20 },
   lastSyncedAt: null,
+  windowBounds: null,
 }
 
 let mainWindow
@@ -24,6 +26,7 @@ let calilSession
 let writeQueue = Promise.resolve()
 let logger
 let lastProgressStage
+let boundsSaveTimer
 
 function logInfo(event, details) {
   logger?.info(event, details)
@@ -527,10 +530,31 @@ function openLoginWindow() {
   return true
 }
 
-function createWindow() {
+async function saveWindowBounds() {
+  if (boundsSaveTimer) clearTimeout(boundsSaveTimer)
+  boundsSaveTimer = undefined
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const bounds = mainWindow.getNormalBounds()
+  await updateState((state) => { state.windowBounds = bounds })
+}
+
+function scheduleWindowBoundsSave() {
+  if (boundsSaveTimer) clearTimeout(boundsSaveTimer)
+  boundsSaveTimer = setTimeout(() => {
+    void saveWindowBounds().catch((error) => logError('window.bounds-save-failed', error))
+  }, 400)
+}
+
+async function createWindow() {
+  const state = await loadState()
+  const savedBounds = isWindowBounds(state.windowBounds) ? state.windowBounds : null
+  const restoredBounds = savedBounds
+    ? normalizeWindowBounds(savedBounds, screen.getDisplayMatching(savedBounds).workArea)
+    : null
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 920,
+    width: restoredBounds?.width ?? 1440,
+    height: restoredBounds?.height ?? 920,
+    ...(restoredBounds ? { x: restoredBounds.x, y: restoredBounds.y } : {}),
     minWidth: 980,
     minHeight: 680,
     backgroundColor: '#f4f1e9',
@@ -547,12 +571,17 @@ function createWindow() {
     logError('renderer.process-gone', new Error(details.reason), { exitCode: details.exitCode })
   })
   mainWindow.on('unresponsive', () => logWarn('renderer.unresponsive'))
+  mainWindow.on('move', scheduleWindowBoundsSave)
+  mainWindow.on('resize', scheduleWindowBoundsSave)
+  mainWindow.on('close', () => { void saveWindowBounds() })
+  mainWindow.on('closed', () => { mainWindow = null })
   if (app.isPackaged) mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   else mainWindow.loadURL('http://localhost:5173')
 }
 
 async function restartApplication() {
   try {
+    await saveWindowBounds()
     await writeQueue
     logInfo('app.restart-requested')
     await logger?.flush()
@@ -586,7 +615,7 @@ function createApplicationMenu() {
   ])
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   logger = createLogger({ filePath: path.join(app.getPath('logs'), 'main.log') })
   logInfo('app.started', {
     appVersion: app.getVersion(),
@@ -600,8 +629,8 @@ app.whenReady().then(() => {
   calilSession = session.fromPartition(CALIL_PARTITION)
   registerIpc()
   Menu.setApplicationMenu(createApplicationMenu())
-  createWindow()
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+  await createWindow()
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow() })
 })
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
@@ -611,6 +640,8 @@ app.on('before-quit', (event) => {
   if (!logger || quittingAfterLogFlush) return
   event.preventDefault()
   quittingAfterLogFlush = true
-  logger.info('app.stopped')
-  logger.flush().finally(() => app.quit())
+  saveWindowBounds().catch((error) => logError('window.bounds-save-failed', error)).then(() => {
+    logger.info('app.stopped')
+    return logger.flush()
+  }).finally(() => app.quit())
 })
