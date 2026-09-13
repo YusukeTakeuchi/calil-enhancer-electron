@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { aggregateStatus, statusStyle } from './lib/availability'
+import { aggregateStatus, isResolvedRecord, mergeCollectionCache, statusStyle } from './lib/availability'
 import { matchesBook } from './lib/search'
 import { NDC_TOP, ndcLabel } from './data/ndc'
 import type { AppState, AvailabilityRecord, Book, LibrarySystem, MoveDestination, Progress } from './types'
@@ -15,13 +15,23 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
   const [progress, setProgress] = useState<Progress | null>(null)
+  const [liveRecords, setLiveRecords] = useState<AppState['collectionCache']>({})
+  const [checkingIsbns, setCheckingIsbns] = useState<Set<string>>(new Set())
   const [sideTab, setSideTab] = useState<'ndc' | 'data'>('ndc')
   const [loginState, setLoginState] = useState<'unknown' | 'yes' | 'no'>('unknown')
 
   useEffect(() => {
     window.calil.loadState().then(setState).catch((error) => setNotice({ kind: 'error', text: messageOf(error) }))
     window.calil.checkLogin().then((loggedIn) => setLoginState(loggedIn ? 'yes' : 'no'))
-    return window.calil.onProgress(setProgress)
+    const stopProgress = window.calil.onProgress(setProgress)
+    const stopAvailability = window.calil.onAvailabilityUpdate((update) => {
+      setLiveRecords((current) => mergeCollectionCache(current, update.books))
+      if (update.complete) setCheckingIsbns(new Set())
+    })
+    return () => {
+      stopProgress()
+      stopAvailability()
+    }
   }, [])
 
   useEffect(() => {
@@ -66,17 +76,23 @@ function App() {
 
   async function checkAvailability() {
     if (!state || pageBooks.length === 0 || state.systems.length === 0) return
+    const targetIsbns = pageBooks.map((book) => book.id)
+    setLiveRecords({})
+    setCheckingIsbns(new Set(targetIsbns))
     setBusy(true)
     setNotice(null)
     try {
-      await window.calil.checkAvailability(pageBooks.map((book) => book.id), state.systems.map((system) => system.id))
+      await window.calil.checkAvailability(targetIsbns, state.systems.map((system) => system.id))
       setState(await window.calil.loadState())
       setNotice({ kind: 'success', text: '表示中の本の蔵書状況を更新しました。' })
     } catch (error) {
+      setState(await window.calil.loadState())
       setNotice({ kind: 'error', text: messageOf(error) })
     } finally {
       setBusy(false)
       setProgress(null)
+      setCheckingIsbns(new Set())
+      setLiveRecords({})
     }
   }
 
@@ -198,6 +214,7 @@ function App() {
               <div className="book-list">
                 {pageBooks.map((book) => (
                   <BookRow key={book.id} book={book} systems={state.systems} records={state.collectionCache[book.id] ?? {}}
+                    liveRecords={liveRecords[book.id] ?? {}} checking={checkingIsbns.has(book.id)}
                     ndc={state.ndc[book.id]} rating={state.stars[book.id] ?? 0} selected={selected.has(book.id)}
                     onToggle={() => toggleSelection(book.id)} onRate={(rate) => setRating(book.id, rate)} />
                 ))}
@@ -236,17 +253,19 @@ function EmptyState({ loginState, busy, onLogin, onSync }: { loginState: string;
   </section>
 }
 
-function BookRow({ book, systems, records, ndc, rating, selected, onToggle, onRate }: {
+function BookRow({ book, systems, records, liveRecords, checking, ndc, rating, selected, onToggle, onRate }: {
   book: Book
   systems: LibrarySystem[]
   records: Record<string, AvailabilityRecord>
+  liveRecords: Record<string, AvailabilityRecord>
+  checking: boolean
   ndc?: string
   rating: number
   selected: boolean
   onToggle: () => void
   onRate: (rate: number) => void
 }) {
-  return <article className={`book-row ${selected ? 'selected' : ''}`}>
+  return <article className={`book-row ${selected ? 'selected' : ''} ${checking ? 'checking' : ''}`}>
     <label className="book-check"><input type="checkbox" checked={selected} onChange={onToggle} /><span /></label>
     <button className="cover-button" onClick={() => window.calil.openExternal(`https://calil.jp/book/${encodeURIComponent(book.id)}`)} title="カーリルで本を開く">
       <img src={`https://calil.jp/cover/${encodeURIComponent(book.id)}`} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} />
@@ -259,17 +278,22 @@ function BookRow({ book, systems, records, ndc, rating, selected, onToggle, onRa
       <StarRating value={rating} onChange={onRate} />
     </div>
     <div className="availability-grid">
-      {systems.length === 0 ? <div className="no-library">登録図書館がありません</div> : systems.map((system) => <SystemAvailability key={system.id} system={system} record={records[system.id]} />)}
+      {systems.length === 0 ? <div className="no-library">登録図書館がありません</div> : systems.map((system) => {
+        const liveRecord = liveRecords[system.id]
+        const hasPartialResult = Boolean(liveRecord && Object.keys(liveRecord.libkey ?? {}).length)
+        const record = isResolvedRecord(liveRecord) || hasPartialResult ? liveRecord : records[system.id]
+        return <SystemAvailability key={system.id} system={system} record={record} checking={checking && !isResolvedRecord(liveRecord)} />
+      })}
     </div>
   </article>
 }
 
-function SystemAvailability({ system, record }: { system: LibrarySystem; record?: AvailabilityRecord }) {
+function SystemAvailability({ system, record, checking }: { system: LibrarySystem; record?: AvailabilityRecord; checking: boolean }) {
   const aggregate = aggregateStatus(record)
   const libraries = record?.libkey ?? {}
   const cached = record?.status === 'Cache'
-  return <div className={`system-card ${record ? aggregate.tone : 'unknown'} ${cached ? 'cached' : ''}`}>
-    <div className="system-heading"><span className="status-mark">{record ? aggregate.mark : '–'}</span><span><strong>{system.name}</strong><small>{record ? aggregate.label : '未確認'}{cached ? ' · キャッシュ' : ''}</small></span></div>
+  return <div className={`system-card ${record ? aggregate.tone : 'unknown'} ${cached ? 'cached' : ''} ${checking ? 'checking' : ''}`}>
+    <div className="system-heading"><span className="status-mark">{checking ? <i className="system-spinner" /> : record ? aggregate.mark : '–'}</span><span><strong>{system.name}</strong><small>{record ? aggregate.label : checking ? '確認中' : '未確認'}{cached ? ' · キャッシュ' : ''}{checking && record ? ' · 更新中' : ''}</small></span></div>
     {record && <div className="library-statuses">
       {system.libraries.map((library) => {
         const style = statusStyle(libraries[library])
