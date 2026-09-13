@@ -35,6 +35,17 @@ describe('NDL classification parser', () => {
     expect(isValidNdc('   ')).toBe(false)
   })
 
+  it('reads NDC from a resource URL when a text-valued subject is absent', () => {
+    const xml = `
+      <recordData>
+        <dcterms:identifier rdf:datatype="http://ndl.go.jp/dcndl/terms/ISBN">978-4-334-10814-4</dcterms:identifier>
+        <dcterms:subject rdf:resource="http://id.ndl.go.jp/class/ndc9/913"/>
+        <dcterms:subject rdf:resource="http://id.ndl.go.jp/class/ndc10/913.6"/>
+      </recordData>`
+
+    expect(extractNdcFromXml(xml)).toEqual({ 4334108148: '913.6' })
+  })
+
   it('creates one-ISBN SRU queries and detects HTTP 200 diagnostics', () => {
     const url = new URL(createNdlSruUrl('4839955557'))
     expect(url.searchParams.get('query')).toBe('isbn="4839955557"')

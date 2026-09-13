@@ -50,9 +50,19 @@ function extractNdcFromXml(xml) {
       /<(?:[\w.-]+:)?subject\b([^>]*)>\s*([^<]*?[^\s<][^<]*?)\s*<\/(?:[\w.-]+:)?subject>/gi,
     )]
     const ndcSubject = subjectMatches.find((match) => /NDC\d*/i.test(match[1]))
-    const ndcMatch = ndcSubject
+    let ndcMatch = ndcSubject
       ? ndcSubject[2]
       : block.match(/<(?:[\w.-]+:)?NDC\d*\b[^>]*>\s*([^<]*?[^\s<][^<]*?)\s*<\/(?:[\w.-]+:)?NDC\d*>/i)?.[1]
+
+    // Recent DC-NDL records often expose NDC only as a subject resource URL,
+    // for example .../class/ndc10/913.6, without a text-valued subject.
+    if (!ndcMatch) {
+      const resourceMatches = [...block.matchAll(
+        /<(?:[\w.-]+:)?subject\b[^>]*(?:[\w.-]+:)?resource=["'][^"']*\/class\/ndc(10|9|8)?\/([^"'#?\s/]+)["'][^>]*\/?>/gi,
+      )]
+      resourceMatches.sort((left, right) => ndcVersionRank(right[1]) - ndcVersionRank(left[1]))
+      ndcMatch = resourceMatches[0]?.[2]
+    }
 
     if (!isbnMatch || !ndcMatch) continue
     const originalIsbn = decodeXml(isbnMatch[1]).replace(/[-\s]/g, '')
@@ -61,6 +71,13 @@ function extractNdcFromXml(xml) {
     if (isbn && ndc && !result[isbn]) result[isbn] = ndc
   }
   return result
+}
+
+function ndcVersionRank(version) {
+  if (version === '10') return 3
+  if (version === '9') return 2
+  if (version === '8') return 1
+  return 0
 }
 
 module.exports = {
