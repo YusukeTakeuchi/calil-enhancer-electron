@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isResolvedRecord, mergeCollectionCache, selectAvailabilityRecord } from './availability'
+import { hasHoldings, isResolvedRecord, mergeCollectionCache, selectAvailabilityRecord } from './availability'
 
 describe('incremental availability', () => {
   it('merges systems without dropping earlier results', () => {
@@ -33,5 +33,17 @@ describe('incremental availability', () => {
 
     expect(selectAvailabilityRecord(running, stored)).toEqual({ record: stored, fromLocalCache: true })
     expect(selectAvailabilityRecord(partial, stored)).toEqual({ record: partial, fromLocalCache: false })
+  })
+
+  it('filters holdings by a whole system or an individual library', () => {
+    const record = { status: 'OK', libkey: { 中央: '蔵書なし', 西: '貸出中', 東: '館内のみ' } }
+
+    expect(hasHoldings(record)).toBe(true)
+    expect(hasHoldings(record, '中央')).toBe(false)
+    expect(hasHoldings(record, '西')).toBe(true)
+    expect(hasHoldings(record, '東')).toBe(true)
+    expect(hasHoldings(record, '未登録館')).toBe(false)
+    expect(hasHoldings({ status: 'OK', libkey: { 中央: '蔵書なし' } })).toBe(false)
+    expect(hasHoldings(undefined)).toBe(false)
   })
 })

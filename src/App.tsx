@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { aggregateStatus, isResolvedRecord, mergeCollectionCache, selectAvailabilityRecord, statusStyle } from './lib/availability'
+import { aggregateStatus, hasHoldings, isResolvedRecord, mergeCollectionCache, selectAvailabilityRecord, statusStyle } from './lib/availability'
 import { matchesBook } from './lib/search'
 import { paginationPages } from './lib/pagination'
 import { NDC_TOP, ndcLabel } from './data/ndc'
 import type { AppState, AvailabilityRecord, Book, LibrarySystem, MoveDestination, Progress } from './types'
 
 type Notice = { kind: 'info' | 'success' | 'error'; text: string } | null
+type HoldingsFilter = { systemId: string; library?: string } | null
 
 function App() {
   const [state, setState] = useState<AppState | null>(null)
   const [query, setQuery] = useState('')
   const [starFilter, setStarFilter] = useState<'none' | '1' | '2' | '3'>('none')
+  const [holdingsFilter, setHoldingsFilter] = useState<HoldingsFilter>(null)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -48,16 +50,21 @@ function App() {
   useEffect(() => {
     setPage(1)
     setSelected(new Set())
-  }, [query, starFilter])
+  }, [query, starFilter, holdingsFilter])
 
   const filteredBooks = useMemo(() => {
     if (!state) return []
-    return state.books.filter((book) => matchesBook(book, query, {
-      stars: state.stars,
-      ndc: state.ndc,
-      starFilter,
-    }))
-  }, [state, query, starFilter])
+    return state.books.filter((book) => {
+      if (!matchesBook(book, query, {
+        stars: state.stars,
+        ndc: state.ndc,
+        starFilter,
+      })) return false
+      if (!holdingsFilter) return true
+      const cachedRecord = state.collectionCache[book.id]?.[holdingsFilter.systemId]
+      return hasHoldings(cachedRecord, holdingsFilter.library)
+    })
+  }, [state, query, starFilter, holdingsFilter])
 
   const booksPerPage = state?.options.booksPerPage ?? 20
   const maxPage = Math.max(1, Math.ceil(filteredBooks.length / booksPerPage))
@@ -224,6 +231,19 @@ function App() {
             <button className="button availability-button" disabled={busy || pageBooks.length === 0 || state.systems.length === 0} onClick={() => checkAvailability()}>
               蔵書を確認
             </button>
+          </div>
+          <div className="holdings-filter-row">
+            <label className="holdings-filter"><span>蔵書有</span>
+              <select value={holdingsFilterValue(holdingsFilter)} disabled={state.systems.length === 0} onChange={(event) => setHoldingsFilter(parseHoldingsFilter(event.target.value))}>
+                <option value="">すべての本</option>
+                {state.systems.map((system) => <optgroup key={system.id} label={system.name}>
+                  <option value={holdingsFilterValue({ systemId: system.id })}>{system.name}（いずれかの館）</option>
+                  {system.libraries.map((library) => <option key={library} value={holdingsFilterValue({ systemId: system.id, library })}>{library}</option>)}
+                </optgroup>)}
+              </select>
+            </label>
+            {holdingsFilter && <button className="clear-holdings-filter" onClick={() => setHoldingsFilter(null)}>絞り込みを解除</button>}
+            <small>ローカルキャッシュから「蔵書なし」以外の本を表示</small>
           </div>
         </section>
 
@@ -448,6 +468,22 @@ function openExternal(url: string) {
 
 function openReservePage(isbn: string, systemId: string) {
   void window.calil.openReservePage(isbn, systemId).catch((error) => window.alert(messageOf(error)))
+}
+
+function holdingsFilterValue(filter: HoldingsFilter) {
+  return filter ? JSON.stringify(filter) : ''
+}
+
+function parseHoldingsFilter(value: string): HoldingsFilter {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value)
+    return typeof parsed?.systemId === 'string' && (parsed.library === undefined || typeof parsed.library === 'string')
+      ? parsed as Exclude<HoldingsFilter, null>
+      : null
+  } catch {
+    return null
+  }
 }
 
 export default App

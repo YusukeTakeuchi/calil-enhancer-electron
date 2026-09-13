@@ -77,6 +77,12 @@ h1 { font-family: Georgia, "Yu Mincho", serif; font-size: 27px; margin: 4px 0 0;
 .star-filter span { font-size: 9px; color: var(--muted); font-weight: 700; }
 .star-filter select { border: 0; outline: 0; background: transparent; color: #a86e23; font-weight: 700; height: 24px; }
 .availability-button { background: #e5ece7; color: var(--green); border-color: #ccd8d0; padding-inline: 20px; }
+.holdings-filter-row { min-height: 34px; margin-top: 11px; display: flex; align-items: center; gap: 10px; position: relative; z-index: 1; }
+.holdings-filter { display: inline-flex; align-items: center; gap: 9px; padding: 5px 9px 5px 11px; border: 1px solid #d4d5cc; border-radius: 9px; background: #fafbf7; }
+.holdings-filter > span { color: var(--green); font-size: 10px; font-weight: 800; white-space: nowrap; }
+.holdings-filter select { width: min(390px, 40vw); min-width: 220px; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 11px; font-weight: 650; }
+.clear-holdings-filter { border: 0; border-bottom: 1px solid currentColor; padding: 2px 0; background: transparent; color: var(--green); font-size: 10px; cursor: pointer; }
+.holdings-filter-row > small { color: var(--muted); font-size: 9px; }
 
 .notice { margin-top: 16px; border: 1px solid; border-radius: 11px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .notice > span { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; }

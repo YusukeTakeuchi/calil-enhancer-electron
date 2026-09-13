@@ -26,6 +26,15 @@ export function isResolvedRecord(record?: AvailabilityRecord): boolean {
   return record?.status === 'OK' || record?.status === 'Cache'
 }
 
+export function hasHoldings(record?: AvailabilityRecord, library?: string): boolean {
+  const libraries = record?.libkey ?? {}
+  if (library !== undefined) {
+    const status = libraries[library]
+    return typeof status === 'string' && status.length > 0 && status !== '蔵書なし'
+  }
+  return Object.values(libraries).some((status) => status.length > 0 && status !== '蔵書なし')
+}
+
 export function selectAvailabilityRecord(
   liveRecord?: AvailabilityRecord,
   storedRecord?: AvailabilityRecord,
